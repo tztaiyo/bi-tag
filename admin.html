@@ -49,7 +49,7 @@ body.login-page{background:linear-gradient(160deg,#12264a 0%,#1d3d72 100%)}
 .lbrand{font-size:21px;font-weight:700}.lsub{color:var(--mute);font-size:12px;letter-spacing:.12em;margin-top:-10px}
 .lcard p{margin:0;color:var(--ink2)}
 .fl{display:grid;gap:4px;font-size:12px;color:var(--ink2);font-weight:700}
-.loginmsg{color:#a21b1b;font-size:13px;min-height:1em}
+.loginmsg{color:#a21b1b;font-size:13px;min-height:1em;white-space:pre-wrap}
 /* 管理アプリ(PC) */
 body.admin{background:var(--bg)}
 .top{background:var(--navy);color:#fff;display:flex;align-items:center;gap:20px;padding:0 max(20px,env(safe-area-inset-left,0px));height:54px;position:sticky;top:0;z-index:20}
@@ -2520,11 +2520,19 @@ function login() {
   if (!CONF.clientId || !CONF.sheetId) return LOGIN_UI.msg('設定が未完了です。');
   if (!window.google || !google.accounts || !google.accounts.oauth2) return LOGIN_UI.msg('Googleのログイン部品を読み込めませんでした。通信を確認して、もう一度開いてください。');
   if (!TOKEN_CLIENT) TOKEN_CLIENT = google.accounts.oauth2.initTokenClient({ client_id: CONF.clientId, scope: SCOPES, callback: onToken,
-    error_callback: e => LOGIN_UI.msg('ログインを中止しました') });
-  TOKEN_CLIENT.requestAccessToken({ prompt: ACCOUNT.email ? '' : 'select_account', hint: ACCOUNT.email || undefined });
+    error_callback: e => LOGIN_UI.msg(e && e.type === 'popup_failed_to_open' ? 'Googleのログイン画面を開けませんでした。ブラウザでこのサイトのポップアップを許可してください。' : 'ログインを中止しました') });
+  // 前回スプレッドシートの許可が足りなかったときは、許可画面を必ず出す
+  const again = lsGet('bi_need_consent') === '1';
+  TOKEN_CLIENT.requestAccessToken({ prompt: again ? 'consent' : (ACCOUNT.email ? '' : 'select_account'), hint: ACCOUNT.email || undefined });
 }
 async function onToken(resp) {
-  if (!resp || resp.error || !resp.access_token) return LOGIN_UI.msg('ログインできませんでした');
+  if (!resp || resp.error || !resp.access_token) return LOGIN_UI.msg('ログインできませんでした' + (resp && resp.error ? `(${resp.error})` : ''));
+  // 許可画面でスプレッドシートのチェックが外れていた場合
+  if (resp.scope && !String(resp.scope).includes('auth/spreadsheets')) {
+    lsSet('bi_need_consent', '1');
+    return LOGIN_UI.msg('Googleの許可画面で「スプレッドシート」の項目にチェックが入っていませんでした。もう一度「Googleでログイン」を押し、許可画面で「すべて選択」してから「続行」を押してください。');
+  }
+  lsSet('bi_need_consent', '');
   TOKEN = { t: resp.access_token, exp: Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000 };
   try { sessionStorage.setItem('bi_tok', JSON.stringify(TOKEN)); } catch (e) { }
   try {
@@ -2534,7 +2542,11 @@ async function onToken(resp) {
   try { await ensureTabs(); }
   catch (e) {
     TOKEN = null; try { sessionStorage.removeItem('bi_tok'); } catch (x) { } lsSet('bi_authorized', '');
-    return LOGIN_UI.msg(e instanceof NoAccess ? `${ACCOUNT.email} には、このアプリのデータを使う権限がありません。管理者にスプレッドシートの共有を依頼してください。` : 'Googleにつながりませんでした: ' + e.message);
+    const why = e.detail ? `\n(Googleからの理由: ${e.detail})` : '';
+    if (e instanceof NoAccess && /insufficient|scope/i.test(e.detail || '')) { lsSet('bi_need_consent', '1'); return LOGIN_UI.msg('スプレッドシートへのアクセスが許可されていません。もう一度「Googleでログイン」を押し、許可画面で「すべて選択」してから「続行」を押してください。' + why); }
+    if (e instanceof NoAccess && /has not been used|disabled/i.test(e.detail || '')) return LOGIN_UI.msg('Google Cloud で Google Sheets API が有効になっていません。' + why);
+    if (e instanceof NoAccess && e.status === 404) return LOGIN_UI.msg('スプレッドシートが見つかりません。設定したスプレッドシートのURLを確認してください。' + why);
+    return LOGIN_UI.msg(e instanceof NoAccess ? `${ACCOUNT.email} には、このアプリのデータを使う権限がありません。管理者にスプレッドシートの共有を依頼してください。${why}` : 'Googleにつながりませんでした: ' + e.message);
   }
   lsSet('bi_authorized', ACCOUNT.email);
   ON_LOGIN && ON_LOGIN();
@@ -2582,7 +2594,10 @@ async function gapi(path, opt = {}) {
   NET.calls++;
   if (r.status === 429) { NET.backoff = Date.now() + 15000; throw new Error('Googleの利用回数の上限に近いため、少し待ちます'); }
   if (r.status === 401) { TOKEN = null; try { sessionStorage.removeItem('bi_tok'); } catch (e) { } throw new NeedLogin('ログインし直してください'); }
-  if (r.status === 403 || r.status === 404) throw new NoAccess('権限がありません');
+  if (r.status === 403 || r.status === 404) {
+    let detail = ''; try { const j = await r.json(); detail = (j.error && (j.error.message || j.error.status)) || ''; } catch (e) { }
+    const err = new NoAccess('権限がありません'); err.status = r.status; err.detail = detail; throw err;
+  }
   if (!r.ok) { NET.online = false; throw new Error(`Googleの応答エラー(${r.status})`); }
   NET.online = true; NET.lastOk = Date.now();
   return r.json();
