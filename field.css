@@ -1,0 +1,60 @@
+/* 現場アプリ(スマホ): 片手で持って、タグをかざしていく画面 */
+body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding-bottom:env(safe-area-inset-bottom,0px)}
+.fb{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 8px max(14px,env(safe-area-inset-left,0px));background:#0b1424}
+.fb-t{font-weight:700;font-size:16px}.fb-s{font-size:12px;color:#c3cede;display:flex;align-items:center;gap:4px}
+.fb-s .btn{padding:3px 8px;font-size:12px}
+/* カメラ */
+.cam{position:relative;background:#000;aspect-ratio:4/3;max-height:46vh;width:100%;overflow:hidden}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.frame{position:absolute;left:50%;top:50%;width:58%;aspect-ratio:1;max-height:84%;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 2000px rgba(0,0,0,.28);pointer-events:none}
+.flash{position:absolute;inset:0;pointer-events:none;opacity:0}
+.flash.on{animation:fl .55s ease-out}
+.flash.ok{background:rgba(40,200,110,.45)}.flash.pri{background:rgba(230,30,30,.6)}.flash.ng{background:rgba(120,120,120,.5)}
+.flash.on.pri{animation:fl3 .9s ease-out}
+@keyframes fl{0%{opacity:1}100%{opacity:0}}
+@keyframes fl3{0%,30%,60%{opacity:1}15%,45%,100%{opacity:0}}
+.camstart{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#162540;text-align:center;padding:16px}
+.camhint{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;background:linear-gradient(transparent,rgba(0,0,0,.75));font-size:13.5px;text-align:center}
+/* モード */
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px max(12px,env(safe-area-inset-left,0px)) 6px}
+.modes button{border:2px solid #34466a;background:#17243d;color:#c9d4e6;border-radius:10px;padding:10px 4px;font-weight:700;font-size:15px}
+.modes button.on{background:#fff;color:var(--navy);border-color:#fff}
+.reasons{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 6px}
+.reasons button{border:2px solid #b67a2a;background:transparent;color:#ffd9a6;border-radius:999px;padding:6px 12px;font-size:14px}
+.reasons button.on{background:var(--s-hold);border-color:var(--s-hold);color:#fff}
+/* 部品 → 場所 */
+.pair{display:grid;grid-template-columns:1fr 26px 1fr;gap:6px;align-items:stretch;padding:6px max(12px,env(safe-area-inset-left,0px))}
+.slot{background:#17243d;border:2px dashed #3a4d73;border-radius:12px;padding:9px 10px;min-height:96px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.slot.set{background:#fff;color:var(--ink);border:2px solid #fff}
+.slot.loc.set{border-color:#7fb0ff}
+.slot.isPri{border-color:var(--pri);box-shadow:0 0 0 3px rgba(230,40,40,.45)}
+.slot.pz{border-color:var(--pri)}
+.slot.done{opacity:.85}
+.sl-k{font-size:11.5px;font-weight:700;color:#8fa1c1}.slot.set .sl-k{color:var(--mute)}
+.sl-v{font-size:19px;font-weight:700;line-height:1.2;word-break:break-all}
+.sl-s{font-size:12px;color:var(--ink2)}
+.sl-e{flex:1;display:flex;align-items:center;justify-content:center;color:#6f82a6;font-size:13px}
+.pin{float:right;font-weight:400;color:var(--accent)}
+.arrow{display:flex;align-items:center;justify-content:center;color:#7f93b8;font-size:22px;font-weight:700}
+.pair.linked .arrow{color:#3ad07c;animation:pop .5s}
+.pair.linked .slot{animation:glow .7s}
+@keyframes pop{50%{transform:scale(1.7)}}
+@keyframes glow{0%{box-shadow:0 0 0 0 rgba(58,208,124,.9)}100%{box-shadow:0 0 0 14px rgba(58,208,124,0)}}
+.msg{margin:4px max(12px,env(safe-area-inset-left,0px)) 8px;padding:10px 12px;border-radius:10px;background:#17243d;font-size:14px;min-height:42px}
+.msg.ok{background:#123b27;color:#d4f7e2}.msg.pri{background:var(--pri);color:#fff}.msg.ng{background:#3b2020;color:#ffd6d6}
+/* 操作の履歴と送信状況 */
+.hist{background:#fff;color:var(--ink);border-radius:14px 14px 0 0;padding:12px max(14px,env(safe-area-inset-left,0px));min-height:30vh}
+.hist-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;font-size:13px}.hist-h span{color:var(--mute);font-size:12px}
+.rc{display:grid;grid-template-columns:62px 1fr;gap:2px 8px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px}
+.rc .t{color:var(--mute);font-variant-numeric:tabular-nums}.rc .w{min-width:0}
+.rc .sent,.rc .sending,.rc .queued{grid-column:2;font-size:11.5px}
+.rc .sent{color:var(--ok)}.rc .sending{color:var(--accent)}.rc .queued{color:var(--warn);font-weight:700}
+.rc.p{background:linear-gradient(90deg,var(--pri-soft),transparent)}
+.manual{display:flex;gap:6px;padding:10px max(14px,env(safe-area-inset-left,0px)) 16px;background:#fff}
+.manual input{flex:1}
+/* PCからのアラート */
+.alertbar{position:fixed;left:0;right:0;top:0;z-index:70;background:var(--pri);color:#fff;padding:calc(14px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-left,0px)) 16px;box-shadow:0 10px 30px rgba(0,0,0,.4);animation:drop .35s ease-out;display:grid;gap:10px}
+.al-h{font-weight:700;font-size:13px;letter-spacing:.04em;opacity:.9;display:flex;justify-content:space-between}
+.al-b{font-size:16px;line-height:1.6}
+.alertbar .btn{background:#fff;color:var(--pri);border:0}
+@keyframes drop{from{transform:translateY(-100%)}to{transform:none}}

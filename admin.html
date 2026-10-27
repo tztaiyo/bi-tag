@@ -1,0 +1,3005 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12264a"><meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
+<title>受入・検査 管理画面</title><style>:root{
+  --ink:#152131; --ink2:#465467; --mute:#7a8696; --line:#dde2e8; --bg:#f2f4f7; --card:#fff;
+  --navy:#12264a; --accent:#1d5fc4; --accent-soft:#e6eefb;
+  --s-unacc:#6b7480; --s-uninsp:#1d5fc4; --s-done:#15803d; --s-hold:#b45309;
+  --pri:#d21f1f; --pri-soft:#fde8e8; --ok:#15803d; --ok-soft:#e5f5ea; --warn:#b45309; --warn-soft:#fff3df;
+  --g:#1a73e8;
+  --r:10px;
+  --f:"BIZ UDPGothic","Hiragino Sans","Noto Sans JP","Meiryo",system-ui,sans-serif;
+  --mono:"BIZ UDGothic",ui-monospace,"SFMono-Regular",Consolas,monospace;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{font-family:var(--f);color:var(--ink);background:var(--bg);font-size:14px;line-height:1.55;-webkit-tap-highlight-color:transparent}
+a{color:var(--accent);text-decoration:none}
+button{font:inherit}
+.mono{font-family:var(--mono)} .num{font-variant-numeric:tabular-nums} .mute{color:var(--mute)} .small{font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap} .row.end{justify-content:flex-end;margin-top:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #c7cdd6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.btn:hover{background:#f4f6f9}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:#a21b1b;border-color:#efb1b1}
+.btn.red{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.big{padding:13px 22px;font-size:16px;font-weight:700}
+.btn:disabled{opacity:.5}
+input[type=text],input[type=search],input[type=number],select{font:inherit;border:1px solid #c7cdd6;border-radius:8px;padding:8px 10px;background:#fff;min-width:0}
+input:focus,select:focus{outline:2px solid #9ec1ff;border-color:var(--accent)}
+.st{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;white-space:nowrap}
+.st-未受入{background:var(--s-unacc)} .st-未検査{background:var(--s-uninsp)} .st-検査済{background:var(--s-done)} .st-保留{background:var(--s-hold)}
+.pri{display:inline-block;background:var(--pri);color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;white-space:nowrap}
+.pri.alert{background:#7a1010}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#9aa6af;margin-right:5px;vertical-align:1px}
+.dot.on{background:#34c472}.dot.warn{background:#f0a020}.dot.bad{background:#e03a3a}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;opacity:0;transition:.25s;z-index:90;max-width:92vw;pointer-events:none}
+.toast.on{opacity:1}.toast.bad{background:#a21b1b}
+.dlg-back{position:fixed;inset:0;background:rgba(15,25,40,.5);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px}
+.dlg{background:#fff;border-radius:14px;padding:20px;max-width:440px;width:100%;box-shadow:0 12px 36px rgba(0,0,0,.28)}
+.dlg-msg{font-size:15px;line-height:1.6}
+.dlg input{width:100%;margin-top:10px}
+/* ログイン */
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+body.login-page{background:linear-gradient(160deg,#12264a 0%,#1d3d72 100%)}
+.lcard{background:#fff;border-radius:16px;padding:28px 24px;max-width:420px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3);display:grid;gap:12px}
+.lbrand{font-size:21px;font-weight:700}.lsub{color:var(--mute);font-size:12px;letter-spacing:.12em;margin-top:-10px}
+.lcard p{margin:0;color:var(--ink2)}
+.fl{display:grid;gap:4px;font-size:12px;color:var(--ink2);font-weight:700}
+.loginmsg{color:#a21b1b;font-size:13px;min-height:1em}
+/* 管理アプリ(PC) */
+body.admin{background:var(--bg)}
+.top{background:var(--navy);color:#fff;display:flex;align-items:center;gap:20px;padding:0 max(20px,env(safe-area-inset-left,0px));height:54px;position:sticky;top:0;z-index:20}
+.brand{font-weight:700;white-space:nowrap}.brand small{display:block;font-weight:400;font-size:10.5px;opacity:.7;letter-spacing:.1em}
+.nav{display:flex;gap:2px;flex:1;overflow-x:auto}
+.nav a{color:#c4cfe0;padding:17px 12px;white-space:nowrap;border-bottom:3px solid transparent}
+.nav a.on{color:#fff;border-bottom-color:#7fb0ff}
+.topst{font-size:12px;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.topst .btn{padding:3px 10px;font-size:12px}
+.wrap{max-width:1400px;margin:0 auto;padding:18px max(20px,env(safe-area-inset-left,0px))}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card.flush{padding:0;overflow-x:auto}
+.card.flush h2{padding:14px 16px 0}
+.sect{margin-bottom:14px}
+.ch{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.empty{padding:26px;text-align:center;color:var(--mute)}
+.welcome{text-align:center;padding:40px 20px;display:grid;gap:12px;justify-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+.tbl{border-collapse:collapse;width:100%}
+.tbl th,.tbl td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.tbl th{font-size:12px;color:var(--ink2);background:#f7f8fa;white-space:nowrap}
+.tbl tr.prirow td:first-child{box-shadow:inset 4px 0 var(--pri)}
+.tbl tr.warnrow{background:var(--pri-soft)}
+.kv th{width:130px;font-size:12px;color:var(--ink2);text-align:left;padding:7px 10px 7px 0;vertical-align:top}.kv td{padding:7px 0}
+.ok{color:var(--ok);font-weight:700}
+
+/* 通信の流れ */
+.flowcard{background:#0f1d36;border-radius:14px;padding:16px 20px;margin-bottom:14px;color:#fff}
+.flow{display:grid;grid-template-columns:200px 1fr 220px 1fr 200px;align-items:center;gap:0}
+.fnode{border-radius:12px;padding:12px 14px;background:#1b2d4e;border:2px solid #2e4570;min-height:84px;transition:.2s}
+.fnode.dev{border-color:#2f8f5b}.fnode.g{border-color:#3d7be0;text-align:center}.fnode.pc{border-color:#c9a64a;text-align:right}
+.fnode.hit{animation:hit .6s}
+@keyframes hit{0%{box-shadow:0 0 0 0 rgba(255,255,255,.75)}100%{box-shadow:0 0 0 16px rgba(255,255,255,0)}}
+.fn-t{font-weight:700;font-size:14px}.fn-s{font-size:11.5px;color:#9fb1d0;margin-top:3px}
+.fdev{font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lane{position:relative;height:84px;display:flex;align-items:center}
+.lane::before{content:"";position:absolute;left:6px;right:6px;top:50%;border-top:2px dashed #3a5585}
+.lane>span{position:absolute;left:0;right:0;top:calc(50% + 8px);text-align:center;font-size:11px;color:#8ea3c7}
+.packet{position:absolute;left:0;top:calc(50% - 14px);background:#34c472;color:#05210f;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4);font-family:var(--mono)}
+.packet.p{background:#ff4d4d;color:#fff}.packet.a{background:#ffd34d;color:#3b2b00}
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--line);border-left:6px solid var(--s-unacc);border-radius:var(--r);padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
+.kpi b{font-size:30px;font-variant-numeric:tabular-nums}
+.kpi.k-未検査{border-left-color:var(--s-uninsp)}.kpi.k-検査済{border-left-color:var(--s-done)}.kpi.k-保留{border-left-color:var(--s-hold)}
+.dgrid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:14px;align-items:start}
+.dside{display:grid;gap:14px}
+@media(max-width:1100px){.dgrid{grid-template-columns:1fr}.flow{grid-template-columns:1fr;gap:6px}.lane{height:40px}}
+/* 置き場マップ */
+.lgroup{margin-bottom:14px}.lg-t{font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:6px}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.lbox{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fafbfc;min-height:70px;display:grid;gap:5px;align-content:start}
+.lbox.pz{border:2px solid var(--pri);background:#fff8f8}
+.lb-h{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.lb-h span{font-size:12px;color:var(--mute)}
+.lb-e{font-size:12px;color:#b3bac5}
+.chip{display:grid;grid-template-columns:auto 1fr auto;gap:6px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer}
+.chip span{color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.p{border-color:var(--pri);background:var(--pri-soft)}
+.chip.fresh{animation:fresh 2.2s ease-out}
+@keyframes fresh{0%{box-shadow:0 0 0 4px #34c472;transform:scale(1.04)}100%{box-shadow:0 0 0 0 transparent;transform:none}}
+.unpl{display:flex;flex-wrap:wrap;gap:6px}.unpl .chip{width:230px}
+/* 通信モニター */
+.feed{display:grid;gap:0;max-height:430px;overflow:auto}
+.fr{display:grid;grid-template-columns:62px 1fr;gap:1px 8px;padding:7px 4px;border-bottom:1px solid var(--line);font-size:12.5px}
+.fr-t{color:var(--mute);font-variant-numeric:tabular-nums}.fr-d{font-size:11px;color:var(--ink2);font-weight:700}
+.fr-w{grid-column:2}.fr-m{grid-column:2;font-size:11px;color:var(--mute)}
+.fr.out .fr-d{color:#a0670a}
+.fr.p{background:linear-gradient(90deg,var(--pri-soft),transparent)}
+.fr.new{animation:frnew 1.6s ease-out}
+@keyframes frnew{0%{background:#d7f5e3}100%{background:transparent}}
+/* アラート */
+.almodal{max-width:520px;padding:0;overflow:hidden}
+.al-top{background:var(--pri);color:#fff;padding:14px 20px;font-weight:700;font-size:17px;display:flex;justify-content:space-between}
+.al-body{padding:16px 20px;display:grid;gap:12px}
+.al-body select{font-size:16px;font-weight:700;font-family:var(--mono)}
+.al-where{background:#f6f7f9;border-radius:8px;padding:10px 12px}
+.al-st{background:var(--ok-soft);border-radius:8px;padding:10px 12px;color:#0d4f2a;font-weight:700;display:grid;gap:4px}
+.al-st .waiting{color:var(--ink2);font-weight:400;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.4}}
+.almodal .row.end{padding:0 20px 18px;margin-top:0}
+.hlist{max-height:300px;overflow:auto;margin-top:10px;font-size:13px;display:grid;gap:4px}
+/* 印刷用のタグ */
+.printarea{display:none}
+@media print{
+  body.printing>*:not(.printarea){display:none!important}
+  body.printing .printarea{display:grid;grid-template-columns:repeat(3,62mm);gap:4mm;padding:6mm}
+  .ptag{border:1px dashed #888;border-radius:3mm;padding:3mm;display:grid;grid-template-columns:24mm 1fr;gap:3mm;align-items:center;height:36mm;break-inside:avoid}
+  .ptag.p{border:2.5px solid #d21f1f}
+  .pq svg{width:24mm;height:24mm}
+  .pk{font-size:7pt;color:#555}.pn{font-size:12pt;font-weight:700;word-break:break-all}.pm{font-size:8pt}.pl{font-size:7.5pt;color:#333}
+  .pp{display:inline-block;background:#d21f1f;color:#fff;font-size:8pt;font-weight:700;padding:0 2mm;border-radius:1mm;margin-top:1mm}
+}
+</style></head>
+<body><div id="app"></div>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="config.js"></script>
+<script>//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+</script>
+<script>/* =====================================================================
+   受入・検査品管理(タグ版)— 現場アプリと管理アプリの共通部分
+   - データは共有のGoogleスプレッドシートに「出来事(イベント)」として追記していく
+     (行を書き換えないので、何台の端末が同時に書いても競合しない)
+   - 読み書きはログインしたGoogleアカウントの権限で行う。シートを共有された人しか使えない
+   ===================================================================== */
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+function now(d = new Date()) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+const hms = s => String(s || '').slice(11, 19);
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+function toast(msg, bad) {
+  let t = document.querySelector('.toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 3200);
+}
+function dialog(html, buttons) {
+  return new Promise(ok => {
+    const d = document.createElement('div'); d.className = 'dlg-back';
+    d.innerHTML = `<div class="dlg" role="dialog">${html}<div class="row end">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
+    document.body.appendChild(d);
+    const inp = d.querySelector('input'); if (inp) { inp.focus(); inp.select(); inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(buttons.findIndex(b => b.ok)); }); }
+    const done = i => { const v = inp ? inp.value : null; d.remove(); ok({ i, v }); };
+    d.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => done(+b.dataset.i));
+  });
+}
+async function ask(msg, okLabel = 'はい', danger = false) { return (await dialog(`<div class="dlg-msg">${esc(msg)}</div>`, [{ label: 'やめる' }, { label: okLabel, cls: danger ? 'danger' : 'primary', ok: true }])).i === 1; }
+async function askText(msg, value = '') {
+  const r = await dialog(`<div class="dlg-msg">${esc(msg)}</div><input type="text" id="dlg-in" value="${esc(value)}">`, [{ label: 'やめる' }, { label: 'OK', cls: 'primary', ok: true }]);
+  return r.i === 1 ? r.v : null;
+}
+let AUDIO = null;
+function beep(kind = 'ok') {   // ok: 短い高音 / pri: 2回 / ng: 低音
+  try {
+    AUDIO = AUDIO || new AudioContext();
+    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : [[220, .3]];
+    let t = AUDIO.currentTime;
+    for (const [f, d] of tones) { if (f) { const o = AUDIO.createOscillator(), g = AUDIO.createGain(); o.frequency.value = f; g.gain.value = .18; o.connect(g); g.connect(AUDIO.destination); o.start(t); o.stop(t + d); } t += d; }
+  } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : 40); } catch (e) { }
+}
+
+/* ---------------- 設定(スプレッドシートとログイン用ID) ----------------
+   リポジトリには何も書かず、管理画面で入力した値を端末に保存する。
+   スマホへは管理画面の「端末を追加」QR(URLに含める)で渡す。これらの値は秘密ではない(権限はGoogle側で管理)。 */
+const CONF = (() => {
+  const c = { ...(window.BI_CONFIG || {}) };
+  const u = new URLSearchParams(location.search);
+  let changed = false;
+  for (const [k, q] of [['clientId', 'c'], ['sheetId', 's']]) { const v = u.get(q); if (v) { lsSet('bi_' + k, v); changed = true; } c[k] = c[k] || lsGet('bi_' + k) || ''; }
+  if (changed) history.replaceState(null, '', location.pathname + location.hash);
+  return c;
+})();
+function saveConf(clientId, sheetId) { lsSet('bi_clientId', clientId); lsSet('bi_sheetId', sheetId); CONF.clientId = clientId; CONF.sheetId = sheetId; }
+const sheetIdFrom = s => { const m = String(s).match(/\/d\/([A-Za-z0-9_-]{20,})/); return m ? m[1] : String(s).trim(); };
+const API = () => (CONF.apiBase ?? 'https://sheets.googleapis.com') + '/v4/spreadsheets/' + encodeURIComponent(CONF.sheetId);
+
+/* ---------------- Googleログイン ---------------- */
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets openid email profile';
+let TOKEN = null, ACCOUNT = { email: '', name: '' }, TOKEN_CLIENT = null, ON_LOGIN = null;
+const tokenValid = () => !!(TOKEN && Date.now() < TOKEN.exp);
+function restoreLogin() {
+  try { const t = JSON.parse(sessionStorage.getItem('bi_tok') || 'null'); if (t && Date.now() < t.exp) TOKEN = t; } catch (e) { }
+  try { ACCOUNT = JSON.parse(lsGet('bi_account') || '{"email":"","name":""}'); } catch (e) { }
+}
+function login() {
+  if (!CONF.clientId || !CONF.sheetId) return LOGIN_UI.msg('設定が未完了です。');
+  if (!window.google || !google.accounts || !google.accounts.oauth2) return LOGIN_UI.msg('Googleのログイン部品を読み込めませんでした。通信を確認して、もう一度開いてください。');
+  if (!TOKEN_CLIENT) TOKEN_CLIENT = google.accounts.oauth2.initTokenClient({ client_id: CONF.clientId, scope: SCOPES, callback: onToken,
+    error_callback: e => LOGIN_UI.msg('ログインを中止しました') });
+  TOKEN_CLIENT.requestAccessToken({ prompt: ACCOUNT.email ? '' : 'select_account', hint: ACCOUNT.email || undefined });
+}
+async function onToken(resp) {
+  if (!resp || resp.error || !resp.access_token) return LOGIN_UI.msg('ログインできませんでした');
+  TOKEN = { t: resp.access_token, exp: Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000 };
+  try { sessionStorage.setItem('bi_tok', JSON.stringify(TOKEN)); } catch (e) { }
+  try {
+    const u = await (await fetch(CONF.userinfoUrl || 'https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + TOKEN.t } })).json();
+    ACCOUNT = { email: u.email || '', name: u.name || (u.email || '').split('@')[0] }; lsSet('bi_account', JSON.stringify(ACCOUNT));
+  } catch (e) { }
+  try { await ensureTabs(); }
+  catch (e) {
+    TOKEN = null; try { sessionStorage.removeItem('bi_tok'); } catch (x) { } lsSet('bi_authorized', '');
+    return LOGIN_UI.msg(e instanceof NoAccess ? `${ACCOUNT.email} には、このアプリのデータを使う権限がありません。管理者にスプレッドシートの共有を依頼してください。` : 'Googleにつながりませんでした: ' + e.message);
+  }
+  lsSet('bi_authorized', ACCOUNT.email);
+  ON_LOGIN && ON_LOGIN();
+}
+function logout() {
+  try { TOKEN && google.accounts.oauth2.revoke(TOKEN.t, () => { }); } catch (e) { }
+  TOKEN = null; try { sessionStorage.removeItem('bi_tok'); } catch (e) { }
+  ['bi_authorized', 'bi_account', 'bi_outbox', 'bi_cache'].forEach(k => lsSet(k, ''));
+  location.reload();
+}
+// 許可されたアカウントでログインするまでは、この画面しか出さない
+const LOGIN_UI = {
+  show(title, sub) {
+    document.body.className = 'login-page';
+    $('app').innerHTML = `<div class="login"><div class="lcard">
+      <div class="lbrand">${esc(title)}</div><div class="lsub">${esc(sub)}</div>
+      ${CONF.clientId && CONF.sheetId ? `<p>利用を許可されたGoogleアカウントでログインしてください。</p>
+      <button class="btn primary big" onclick="login()">Googleでログイン</button>` : setupForm()}
+      <div class="loginmsg" id="loginmsg"></div></div></div>`;
+  },
+  msg(m) { const el = $('loginmsg'); if (el) el.textContent = m; },
+};
+function setupForm() {   // 初回だけ: 管理者が自分のPCで入力する
+  return `<p>最初の設定です(管理者のPCで一度だけ)。手順書で作った2つの値を入れてください。</p>
+    <label class="fl">ログイン用クライアントID<input type="text" id="cf_c" placeholder="xxxxxxxx.apps.googleusercontent.com"></label>
+    <label class="fl">スプレッドシートのURL<input type="text" id="cf_s" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+    <button class="btn primary big" onclick="saveConf($('cf_c').value.trim(), sheetIdFrom($('cf_s').value)); location.reload()">保存して次へ</button>`;
+}
+function installMockGIS() {   // 動作確認用(実際のGoogleの代わり)
+  window.google = { accounts: { oauth2: {
+    initTokenClient: o => ({ requestAccessToken: async () => { const em = await askText('(動作確認用)ログインするメールアドレス', ACCOUNT.email || 'taiyo@example.com'); if (em) o.callback({ access_token: 'mock:' + em, expires_in: 3600 }); } }),
+    revoke: () => { } } } };
+}
+
+/* ---------------- スプレッドシート ---------------- */
+class NoAccess extends Error { }
+class NeedLogin extends Error { }
+const NET = { online: true, lastOk: 0, backoff: 0, calls: 0 };
+async function gapi(path, opt = {}) {
+  if (!tokenValid()) throw new NeedLogin('ログインが必要です');
+  if (Date.now() < NET.backoff) throw new Error('混雑のため少し待っています');
+  let r;
+  try { r = await fetch(API() + path, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + TOKEN.t, 'Content-Type': 'application/json' } }); }
+  catch (e) { NET.online = false; throw e; }
+  NET.calls++;
+  if (r.status === 429) { NET.backoff = Date.now() + 15000; throw new Error('Googleの利用回数の上限に近いため、少し待ちます'); }
+  if (r.status === 401) { TOKEN = null; try { sessionStorage.removeItem('bi_tok'); } catch (e) { } throw new NeedLogin('ログインし直してください'); }
+  if (r.status === 403 || r.status === 404) throw new NoAccess('権限がありません');
+  if (!r.ok) { NET.online = false; throw new Error(`Googleの応答エラー(${r.status})`); }
+  NET.online = true; NET.lastOk = Date.now();
+  return r.json();
+}
+const TABS = {
+  events: { title: 'イベント', cols: ['ID', '日時', '端末', 'アカウント', '種類', 'タグ', '品番', 'ロット', '場所', '内容'] },
+  tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時'] },
+  locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
+};
+const colLetter = n => String.fromCharCode(65 + n - 1);
+const rng = (tab, from = 2, to = '') => `'${TABS[tab].title}'!A${from}:${colLetter(TABS[tab].cols.length)}${to}`;
+async function ensureTabs() {
+  const meta = await gapi('?fields=sheets.properties.title');
+  const have = new Set((meta.sheets || []).map(s => s.properties.title));
+  const missing = Object.values(TABS).filter(t => !have.has(t.title));
+  if (!missing.length) return;
+  await gapi(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: missing.map(t => ({ addSheet: { properties: { title: t.title, gridProperties: { frozenRowCount: 1 } } } })) }) });
+  await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: missing.map(t => ({ range: `'${t.title}'!A1`, values: [t.cols] })) }) });
+}
+async function appendRows(tab, rows) {
+  const r = await gapi(`/values/${encodeURIComponent(rng(tab, 1))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', body: JSON.stringify({ values: rows }) });
+  const m = ((r.updates || {}).updatedRange || '').match(/![A-Z]+(\d+)/);
+  return m ? +m[1] : 0;
+}
+async function readRows(tab, from = 2) {
+  const r = await gapi(`/values/${encodeURIComponent(rng(tab, from))}?valueRenderOption=FORMATTED_VALUE`);
+  return (r.values || []);
+}
+async function readMasters() {
+  const qs = ['tags', 'locs'].map(t => 'ranges=' + encodeURIComponent(rng(t))).join('&');
+  const r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`);
+  const [tv, lv] = (r.valueRanges || []).map(v => v.values || []);
+  return {
+    tags: Object.fromEntries((tv || []).filter(r => r[0]).map(r => [r[0], { tag: r[0], part: r[1] || '', name: r[2] || '', lot: r[3] || '', qty: r[4] || '', pri: r[5] === '優先', issued: r[6] || '' }])),
+    locs: Object.fromEntries((lv || []).filter(r => r[0]).map(r => [r[0], { code: r[0], type: r[1] || '', name: r[2] || '', pz: r[3] === '○' }])),
+  };
+}
+
+/* ---------------- タグの形式(QRの中身) ----------------
+   部品タグ: BI-T;ID=T0001;PN=IHF-30112-A;LOT=L2610-03;Q=12;P=1   (P=1 なら発行時点で優先)
+   場所タグ: BI-L;ID=CP-01;K=CART;PZ=1                              (PZ=1 なら優先置き場)
+   タグだけで品番・優先・場所の種類が分かるので、通信できない場所でも判定できる */
+const LOC_KIND = { TEMP: '仮置き', CART: '台車', INSP: '検査エリア' };
+const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
+function parseTag(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/^BI-([TL]);(.*)$/); if (!m) return null;
+  const f = Object.fromEntries(m[2].split(';').map(p => { const i = p.indexOf('='); return [p.slice(0, i), p.slice(i + 1)]; }));
+  if (m[1] === 'T') return f.ID ? { kind: 'part', tag: f.ID, part: f.PN || '', lot: f.LOT || '', qty: f.Q || '', pri: f.P === '1' } : null;
+  return f.ID ? { kind: 'loc', code: f.ID, type: LOC_KIND[f.K] || f.K || '', pz: f.PZ === '1' } : null;
+}
+const partQR = t => `BI-T;ID=${t.tag};PN=${t.part};LOT=${t.lot};Q=${t.qty};P=${t.pri ? 1 : 0}`;
+const locQR = l => `BI-L;ID=${l.code};K=${KIND_OF[l.type] || 'TEMP'};PZ=${l.pz ? 1 : 0}`;
+function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true }); }
+
+/* ---------------- イベント(出来事)と、いまの状態の組み立て ----------------
+   種類: place(場所に置いた) / status(検査済・保留・解除) / alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
+const STATUSES = ['未受入', '未検査', '検査済', '保留'];
+const HOLD_REASONS = ['数量違い', '不良疑い', '書類不備', 'その他'];
+function eventRow(e) { return [e.id, e.at, e.device, e.account, e.type, e.tag || '', e.part || '', e.lot || '', e.loc || '', JSON.stringify(e.data || {})]; }
+function rowEvent(r, rowNo) {
+  let data = {}; try { data = JSON.parse(r[9] || '{}'); } catch (e) { }
+  return { id: r[0], at: r[1], device: r[2], account: r[3], type: r[4], tag: r[5], part: r[6], lot: r[7], loc: r[8], data, row: rowNo, bytes: (r.join('').length + 20) };
+}
+function newEvent(type, f = {}) {
+  return { id: 'E' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase(), at: now(), device: DEVICE.name, account: ACCOUNT.email, type, ...f, data: { t: Date.now(), ...(f.data || {}) } };
+}
+function buildState(masters, events) {
+  const items = {};
+  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', loc: '', since: '', by: '', hist: [] });
+  for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
+  const alerts = [], devices = {};
+  for (const e of events) {
+    const d = devices[e.device] || (devices[e.device] = { name: e.device, account: e.account, last: '', lastT: 0, n: 0 });
+    d.last = e.at; d.lastT = e.data.t || 0; d.n++; if (e.type === 'hello') d.info = e.data;
+    if (e.type === 'place' || e.type === 'status') {
+      const it = item(e.tag, e);
+      if (e.type === 'place') { if (it.status === '未受入') it.status = '未検査'; it.loc = e.loc; it.since = e.at; it.by = e.device; if (e.data.pri && !it.pri) { it.pri = true; it.priSrc = 'タグ'; } }
+      else {
+        const to = e.data.to;
+        if (to === '保留') { it.prev = it.status === '保留' ? it.prev : it.status; it.status = '保留'; it.hold = e.data.reason || ''; }
+        else if (to === '解除') { it.status = it.prev || '未検査'; it.hold = ''; }
+        else it.status = to;
+        if (it.status === '未受入') it.status = '未検査';
+      }
+      it.hist.push(e);
+    } else if (e.type === 'alert') {
+      alerts.push({ ...e, acks: [] });
+      for (const it of Object.values(items)) if (it.part === e.part || it.tag === e.tag) { it.pri = true; it.priSrc = 'アラート'; it.hist.push(e); }
+    } else if (e.type === 'ack') {
+      const a = alerts.find(x => x.id === e.data.alert); if (a) a.acks.push(e);
+    }
+  }
+  return { items, alerts, devices };
+}
+
+/* ---------------- 端末の名前 ---------------- */
+const DEVICE = { name: lsGet('bi_dev_name') || '' };
+async function ensureDeviceName(def) {
+  if (DEVICE.name) return;
+  const n = await askText('この端末の名前(管理画面の一覧に出ます)', def);
+  DEVICE.name = (n || '').trim() || def; lsSet('bi_dev_name', DEVICE.name);
+}
+</script>
+<script>/* =====================================================================
+   管理アプリ(PC)— 現場から届く結果を見て、優先アラートを現場に知らせる
+   - 現場のスマホとは別のアプリ。共有のスプレッドシートを数秒ごとに読み、届いた分だけ反映する
+   - 「通信の流れ」で、スマホ → Google → この画面 のやりとりを目で見えるようにする
+   ===================================================================== */
+let MAST = { tags: {}, locs: {} }, EVENTS = [], ST = { items: {}, alerts: [], devices: {} };
+let LASTROW = 1, LOADED = false;
+const RECV = {};          // イベントID → この画面が受け取った時刻
+const FRESH = {};         // 最近変わったタグ(置き場マップで光らせる)
+let FEED = [];            // 通信モニターの行
+let VIEW = 'dash', ARG = '';
+const PC_NAME = () => DEVICE.name || '管理PC';
+
+/* ---------------- 起動 ---------------- */
+async function boot() {
+  restoreLogin();
+  if (CONF.mock) installMockGIS();
+  ON_LOGIN = () => main();
+  if (!lsGet('bi_authorized')) return LOGIN_UI.show('受入・検査 管理画面', 'BLUE IMPULSE / 管理(PC)');
+  main();
+}
+async function main() {
+  document.body.className = 'admin';
+  DEVICE.name = lsGet('bi_pc_name') || '管理PC';   // 現場アプリとは別の名前で記録する
+  window.addEventListener('hashchange', () => { route(); render(); });
+  route(); render();
+  await loadAll();
+  setInterval(poll, 2500);
+  setInterval(() => { if (VIEW === 'dash' || VIEW === 'devices') renderLive(); }, 5000);
+}
+function route() { const m = location.hash.match(/^#([a-z]+)(?:-(.+))?$/); VIEW = m ? m[1] : 'dash'; ARG = m && m[2] ? decodeURIComponent(m[2]) : ''; }
+async function loadAll() {
+  try {
+    MAST = await readMasters();
+    const rows = await readRows('events');
+    EVENTS = rows.filter(r => r[0]).map((r, i) => rowEvent(r, i + 2));
+    EVENTS.forEach(e => RECV[e.id] = 0);
+    LASTROW = 1 + rows.length; rebuild(); LOADED = true;
+    FEED = EVENTS.slice(-14).reverse().map(e => ({ e, recv: 0 }));
+  } catch (e) { netError(e); }
+  render();
+}
+function rebuild() { ST = buildState(MAST, EVENTS); }
+function netError(e) { if (e instanceof NeedLogin) { NET.needLogin = true; } renderTop(); }
+
+/* ---------------- 現場からの到着を受け取る ---------------- */
+let POLLING = false, MAST_T = 0;
+async function poll() {
+  if (POLLING || !tokenValid()) return renderTop(); POLLING = true;
+  try {
+    if (Date.now() - MAST_T > 30000) { MAST = await readMasters(); MAST_T = Date.now(); }
+    const rows = await readRows('events', LASTROW + 1);
+    const news = rows.filter(r => r[0]).map((r, i) => rowEvent(r, LASTROW + 1 + i)).filter(e => !(e.id in RECV));
+    LASTROW += rows.length;
+    if (news.length) {
+      for (const e of news) { RECV[e.id] = Date.now(); EVENTS.push(e); if (e.tag) FRESH[e.tag] = Date.now(); FEED.unshift({ e, recv: Date.now() }); animateFlow(e); }
+      FEED = FEED.slice(0, 40); rebuild(); renderLive(); onArrivals(news);
+    }
+  } catch (e) { netError(e); }
+  finally { POLLING = false; renderTop(); }
+}
+function onArrivals(news) {
+  for (const e of news) {   // 優先品を通常の場所に置いた、などは画面上で知らせる
+    if (e.type === 'place' && e.data.pri && !e.data.pz) toast(`優先品 ${e.part} が通常の置き場所(${e.loc})に置かれました`, true);
+    if (e.type === 'ack') { const a = ST.alerts.find(x => x.id === e.data.alert); if (a) toast(`${e.device} がアラートを確認しました(${e.part})`); renderAlertModal(); }
+  }
+}
+async function post(ev) {   // 管理画面からのイベント(アラート・保留解除など)
+  const t0 = performance.now();
+  try { await appendRows('events', [eventRow(ev)]); } catch (e) { toast('送れませんでした: ' + e.message, true); throw e; }
+  RECV[ev.id] = Date.now(); EVENTS.push(ev); LASTROW++; FEED.unshift({ e: ev, recv: Date.now(), out: true, ms: Math.round(performance.now() - t0) });
+  animateFlow(ev, true); rebuild(); renderLive();
+}
+
+/* ---------------- 画面の骨組み ---------------- */
+const NAV = [['dash', '現場の状況'], ['items', '部品一覧'], ['tags', 'タグ発行'], ['locs', '置き場所'], ['devices', '現場端末'], ['setup', '設定']];
+function render() {
+  $('app').innerHTML = `<header class="top"><div class="brand">受入・検査 管理画面<small>BLUE IMPULSE</small></div>
+    <nav class="nav">${NAV.map(([k, n]) => `<a href="#${k}" class="${VIEW === k ? 'on' : ''}">${n}</a>`).join('')}</nav>
+    <div class="topst" id="topst"></div></header>
+    <main class="wrap" id="main">${LOADED ? (VIEWS[VIEW] || VIEWS.dash)() : '<div class="card empty">スプレッドシートを読み込んでいます…</div>'}</main>`;
+  renderTop(); afterRender();
+}
+function renderLive() { if (!LOADED) return; const m = $('main'); if (!m) return; if (VIEW === 'dash') { $('live').innerHTML = dashLive(); afterRender(); } else if (VIEW === 'devices' || VIEW === 'items') { m.innerHTML = VIEWS[VIEW](); afterRender(); } }
+function afterRender() { document.querySelectorAll('[data-qr]').forEach(el => { if (!el.innerHTML) el.innerHTML = qrSvg(el.dataset.qr); }); }
+function renderTop() {
+  const el = $('topst'); if (!el) return;
+  const s = !tokenValid() ? ['warn', 'ログインが必要'] : !NET.online ? ['bad', 'Googleにつながりません'] : ['on', `受信中(2.5秒ごと)`];
+  el.innerHTML = `<i class="dot ${s[0]}"></i>${s[1]}${!tokenValid() ? ' <button class="btn" onclick="login()">ログイン</button>' : ''}`;
+}
+const stH = s => `<span class="st st-${s}">${s}</span>`;
+const priH = it => it.pri ? `<span class="pri ${it.priSrc === 'アラート' ? 'alert' : ''}">優先${it.priSrc === 'アラート' ? '(アラート)' : ''}</span>` : '';
+const locName = c => { const l = MAST.locs[c]; return l ? `${l.type} ${c}` : c; };
+const VIEWS = {};
+
+/* ---------------- 現場の状況(ダッシュボード) ---------------- */
+VIEWS.dash = () => {
+  if (!Object.keys(MAST.tags).length && !EVENTS.some(e => e.type === 'place')) return `<div class="card welcome"><h2>はじめに</h2>
+    <p>共有のスプレッドシートにはまだタグがありません。デモ用のタグと置き場所を作ると、すぐに試せます。</p>
+    <button class="btn primary big" onclick="seedDemo()">デモ用のタグと置き場所を作る</button>
+    <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)と置き場所8か所を登録します。「タグ発行」「置き場所」から印刷できます。</p></div>`;
+  return `<div class="head"><div><h1>現場の状況</h1><div class="mute small">現場のスマホがタグを読むと、数秒でここに反映されます。</div></div>
+    <button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div>
+    <section class="flowcard"><div class="flow" id="flow">
+      <div class="fnode dev" id="fn-dev"><div class="fn-t">現場端末</div><div id="fn-devs"></div></div>
+      <div class="lane" id="lane1"><span>結果だけを送信 →</span></div>
+      <div class="fnode g" id="fn-g"><div class="fn-t">Google スプレッドシート</div><div class="fn-s">ログインした人だけが読み書き</div></div>
+      <div class="lane" id="lane2"><span>→ 数秒ごとに受信</span></div>
+      <div class="fnode pc" id="fn-pc"><div class="fn-t">この管理画面</div><div class="fn-s" id="fn-pcst"></div></div>
+    </div></section>
+    <div id="live">${dashLive()}</div>`;
+};
+function dashLive() {
+  const items = Object.values(ST.items);
+  const cnt = Object.fromEntries(STATUSES.map(s => [s, items.filter(i => i.status === s).length]));
+  const devs = Object.values(ST.devices).filter(d => d.name !== PC_NAME()).sort((a, b) => b.lastT - a.lastT);
+  setTimeout(() => {
+    const fd = $('fn-devs'); if (fd) fd.innerHTML = devs.slice(0, 4).map(d => `<div class="fdev"><i class="dot ${Date.now() - d.lastT < 120000 ? 'on' : ''}"></i>${esc(d.name)}</div>`).join('') || '<div class="fn-s">まだ接続なし</div>';
+    const ps = $('fn-pcst'); if (ps) ps.textContent = `受信 ${EVENTS.length} 件`;
+  });
+  const byLoc = {}; items.filter(i => i.loc).forEach(i => (byLoc[i.loc] = byLoc[i.loc] || []).push(i));
+  const groups = ['仮置き', '台車', '検査エリア'];
+  const locs = Object.values(MAST.locs);
+  Object.keys(byLoc).filter(c => !MAST.locs[c]).forEach(c => locs.push({ code: c, type: 'その他', name: '', pz: false }));
+  const chip = i => `<div class="chip ${i.pri ? 'p' : ''} ${Date.now() - (FRESH[i.tag] || 0) < 6000 ? 'fresh' : ''}" onclick="showItem('${esc(i.tag)}')"><b class="mono">${esc(i.part)}</b><span>${esc(i.name)}</span>${stH(i.status)}</div>`;
+  const unplaced = items.filter(i => !i.loc);
+  const pris = items.filter(i => i.pri && i.status !== '検査済');
+  return `<div class="kpis">${STATUSES.map(s => `<div class="kpi k-${s}"><div>${s}</div><b>${cnt[s]}</b></div>`).join('')}</div>
+  <div class="dgrid"><section class="card"><div class="ch"><h2>置き場マップ</h2><span class="mute small">光っているのは、いま届いた変更</span></div>
+    ${[...groups, 'その他'].map(g => { const ls = locs.filter(l => l.type === g); if (!ls.length) return ''; return `<div class="lgroup"><div class="lg-t">${g}</div><div class="lgrid">${ls.map(l => `<div class="lbox ${l.pz ? 'pz' : ''}"><div class="lb-h"><b class="mono">${esc(l.code)}</b><span>${esc(l.name)}</span>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</div>${(byLoc[l.code] || []).map(chip).join('') || '<div class="lb-e">なし</div>'}</div>`).join('')}</div></div>`; }).join('')}
+    ${unplaced.length ? `<div class="lgroup"><div class="lg-t">まだ置き場所の記録がない(未受入)</div><div class="unpl">${unplaced.map(chip).join('')}</div></div>` : ''}
+  </section>
+  <div class="dside">
+    <section class="card"><div class="ch"><h2>通信モニター</h2><span class="mute small">新しい順</span></div><div class="feed">${FEED.slice(0, 16).map(feedRow).join('') || '<div class="mute small">まだ受信していません</div>'}</div></section>
+    <section class="card"><div class="ch"><h2>優先品の所在</h2><span class="mute small">${pris.length} 件</span></div>
+      ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${i.loc && !(MAST.locs[i.loc] || {}).pz ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}${i.loc && !(MAST.locs[i.loc] || {}).pz ? '<div class="small" style="color:var(--pri)">優先置き場ではない</div>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}
+    </section>
+  </div></div>`;
+}
+function feedRow(f) {
+  const e = f.e, d = e.data || {};
+  const delay = f.recv && d.t ? Math.max(0, f.recv - d.t) : null;
+  const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> を <b>${esc(e.loc)}</b> に置いた` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
+    : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : esc(e.type);
+  const dir = f.out || e.device === PC_NAME() ? 'out' : 'in';
+  return `<div class="fr ${dir} ${d.pri ? 'p' : ''} ${f.recv && Date.now() - f.recv < 5000 ? 'new' : ''}"><span class="fr-t">${hms(e.at)}</span>
+    <span class="fr-d">${dir === 'out' ? '管理 → 現場' : esc(e.device) + ' →'}</span><span class="fr-w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}</span>
+    <span class="fr-m">${e.bytes || eventRow(e).join('').length} B${delay !== null && delay < 120000 ? ` ・ 遅れ ${(delay / 1000).toFixed(1)}秒` : ''}${f.ms ? ` ・ 送信 ${(f.ms / 1000).toFixed(1)}秒` : ''}</span></div>`;
+}
+// 通信の流れのアニメーション: 端末 → Google → この画面(アラートは逆向き)
+function animateFlow(e, out) {
+  if (VIEW !== 'dash') return;
+  const lanes = out ? ['lane2', 'lane1'] : ['lane1', 'lane2'];
+  const label = e.type === 'place' ? `${e.part} → ${e.loc}` : e.type === 'status' ? `${e.part} ${e.data.to}` : e.type === 'alert' ? `優先アラート ${e.part}` : e.type === 'ack' ? `了解 ${e.part}` : '接続';
+  const cls = (e.data || {}).pri || e.type === 'alert' ? 'p' : e.type === 'ack' ? 'a' : '';
+  lanes.forEach((id, k) => setTimeout(() => {
+    const lane = $(id); if (!lane) return;
+    const p = document.createElement('div'); p.className = 'packet ' + cls; p.textContent = label; lane.appendChild(p);
+    const w = lane.clientWidth - p.offsetWidth;
+    p.animate(out ? [{ transform: `translateX(${w}px)`, opacity: 1 }, { transform: 'translateX(0)', opacity: 1 }] : [{ transform: 'translateX(0)', opacity: 1 }, { transform: `translateX(${w}px)`, opacity: 1 }], { duration: 900, easing: 'ease-in-out' }).onfinish = () => p.remove();
+    const node = $(k === 0 ? 'fn-g' : out ? 'fn-dev' : 'fn-pc'); if (node) setTimeout(() => { node.classList.remove('hit'); void node.offsetWidth; node.classList.add('hit'); }, 880);
+  }, k * 950));
+}
+
+/* ---------------- 優先アラート(デモ: ボタンで受信したことにする) ---------------- */
+let ALERT_UI = null;
+function openAlert() {
+  const items = Object.values(ST.items);
+  const cand = items.filter(i => !i.pri && i.loc).sort((a, b) => String(b.since).localeCompare(String(a.since)))[0] || items.find(i => !i.pri) || items[0];
+  if (!cand) return toast('タグがありません。先にデモ用のタグを作ってください', true);
+  ALERT_UI = { part: cand.part, at: now(), sent: null };
+  renderAlertModal(true);
+}
+function renderAlertModal(open) {
+  if (!ALERT_UI) return;
+  let d = $('almodal');
+  if (!d) { if (!open) return; d = document.createElement('div'); d.id = 'almodal'; d.className = 'dlg-back'; document.body.appendChild(d); }
+  const parts = [...new Set(Object.values(ST.items).map(i => i.part))].sort();
+  const its = Object.values(ST.items).filter(i => i.part === ALERT_UI.part);
+  const it = its[0] || {};
+  const where = its.filter(i => i.loc).map(i => `${locName(i.loc)}(${i.by} が ${hms(i.since)} に置いた)`).join(' / ');
+  const sent = ALERT_UI.sent && ST.alerts.find(a => a.id === ALERT_UI.sent);
+  d.innerHTML = `<div class="dlg almodal"><div class="al-top"><span>優先アラート 受信</span><span>${hms(ALERT_UI.at)}</span></div>
+    <div class="al-body">
+      <div class="small mute">生産計画の変更により、次の部品が優先になりました(デモ)</div>
+      <div class="row"><select id="alpart" ${sent ? 'disabled' : ''} onchange="ALERT_UI.part=this.value;renderAlertModal()">${parts.map(p => `<option ${p === ALERT_UI.part ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select><span>${esc(it.name || '')}</span></div>
+      <div class="al-where"><div class="small mute">いまの場所(現場の記録から)</div><b>${where ? esc(where) : 'まだ現場で読み取られていません'}</b></div>
+      ${sent ? `<div class="al-st"><div>✓ 現場へ送信しました(${hms(sent.at)})</div>${sent.acks.length ? sent.acks.map(a => `<div class="ack">✓ ${esc(a.device)} が了解(${(((a.data.t || 0) - (sent.data.t || 0)) / 1000).toFixed(1)}秒後)</div>`).join('') : '<div class="waiting">現場の確認を待っています…</div>'}</div>` : ''}
+    </div>
+    <div class="row end">${sent ? '<button class="btn primary" onclick="closeAlert()">閉じる</button>' : `<button class="btn" onclick="closeAlert()">閉じる</button><button class="btn red big" onclick="sendAlert()">現場に知らせる</button>`}</div></div>`;
+}
+async function sendAlert() {
+  const its = Object.values(ST.items).filter(i => i.part === ALERT_UI.part);
+  const where = its.filter(i => i.loc).map(i => locName(i.loc)).join('・');
+  const ev = newEvent('alert', { part: ALERT_UI.part, data: { name: (its[0] || {}).name || '', where, msg: '優先に変更' } });
+  try { await post(ev); ALERT_UI.sent = ev.id; renderAlertModal(); } catch (e) { }
+}
+function closeAlert() { const d = $('almodal'); if (d) d.remove(); ALERT_UI = null; }
+
+/* ---------------- 部品一覧・履歴 ---------------- */
+VIEWS.items = () => {
+  const items = Object.values(ST.items).sort((a, b) => (b.pri - a.pri) || String(b.since).localeCompare(String(a.since)));
+  return `<div class="head"><h1>部品一覧</h1><span class="mute small">${items.length} 件</span></div>
+  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>置き場所</th><th>最終更新</th><th></th></tr></thead><tbody>
+  ${items.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td class="mono">${esc(i.tag)}</td><td><b class="mono">${esc(i.part)}</b> ${priH(i)}</td><td>${esc(i.name)}</td><td class="mono">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
+    <td>${stH(i.status)}${i.hold ? `<div class="small mute">${esc(i.hold)}</div>` : ''}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}</td><td class="small">${esc(i.since ? hms(i.since) + ' ' + i.by : '')}</td>
+    <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button>${i.status === '保留' ? ` <button class="btn" onclick="release('${esc(i.tag)}')">保留を解除</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">まだありません</td></tr>'}
+  </tbody></table></div>`;
+};
+function showItem(tag) {
+  const i = ST.items[tag]; if (!i) return;
+  dialog(`<h3 style="margin:0 0 6px"><span class="mono">${esc(i.part)}</span> ${priH(i)} ${stH(i.status)}</h3><div class="small mute">タグ ${esc(i.tag)} ・ ${esc(i.name)} ・ ロット ${esc(i.lot)} ・ 数量 ${esc(i.qty)}</div>
+    <div class="hlist">${i.hist.slice().reverse().map(e => `<div><span class="mute">${esc(e.at)}</span> ${e.type === 'place' ? `${esc(locName(e.loc))} に置いた` : e.type === 'alert' ? '優先アラート' : esc(e.data.to)} <span class="mute">(${esc(e.device)})</span></div>`).join('') || '<div class="mute">記録なし</div>'}</div>`, [{ label: '閉じる', cls: 'primary' }]);
+}
+async function release(tag) { const i = ST.items[tag]; await post(newEvent('status', { tag, part: i.part, lot: i.lot, data: { to: '解除' } })); toast('保留を解除しました'); render(); }
+
+/* ---------------- タグ発行・印刷 ---------------- */
+VIEWS.tags = () => {
+  const tags = Object.values(MAST.tags);
+  const parts = [...new Set(tags.map(t => t.part))];
+  return `<div class="head"><div><h1>タグ発行</h1><div class="mute small">発行時に「優先」にしたタグは、現場で読んだ瞬間に優先品として知らせます(パターン1)。</div></div>
+    <button class="btn primary" onclick="printTags()">選んだタグを印刷</button></div>
+  <div class="card sect noprint"><h2>新しく発行する</h2><div class="row">
+    <input type="text" id="t_part" placeholder="品番" list="partl" style="width:160px"><datalist id="partl">${parts.map(p => `<option value="${esc(p)}">`).join('')}</datalist>
+    <input type="text" id="t_name" placeholder="品名" style="width:180px"><input type="text" id="t_lot" placeholder="ロット" style="width:120px">
+    <input type="number" id="t_qty" placeholder="数量" style="width:80px"><label class="row"><input type="checkbox" id="t_pri"> 優先</label>
+    <input type="number" id="t_n" value="1" min="1" max="50" style="width:70px"> 枚 <button class="btn primary" onclick="issueTags()">発行</button></div></div>
+  <div class="card flush"><table class="tbl"><thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('.tsel').forEach(c=>c.checked=this.checked)"></th><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>優先</th><th>状態</th><th>発行</th></tr></thead><tbody>
+  ${tags.map(t => { const i = ST.items[t.tag] || {}; return `<tr><td><input type="checkbox" class="tsel" value="${esc(t.tag)}" checked></td><td class="mono">${esc(t.tag)}</td><td class="mono">${esc(t.part)}</td><td>${esc(t.name)}</td><td class="mono">${esc(t.lot)}</td><td>${esc(t.qty)}</td><td>${t.pri ? '<span class="pri">優先</span>' : ''}</td><td>${i.status ? stH(i.status) : ''}</td><td class="small">${esc(t.issued)}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">まだありません</td></tr>'}
+  </tbody></table></div>`;
+};
+async function issueTags() {
+  const part = $('t_part').value.trim().toUpperCase(); if (!part) return toast('品番を入れてください', true);
+  const n = Math.max(1, Math.min(50, +$('t_n').value || 1));
+  let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +k.replace(/\D/g, '') || 0));
+  const rows = []; for (let i = 0; i < n; i++) { max++; rows.push([`T${pad(max, 4)}`, part, $('t_name').value.trim(), $('t_lot').value.trim().toUpperCase(), $('t_qty').value, $('t_pri').checked ? '優先' : '', now()]); }
+  try { await appendRows('tags', rows); MAST = await readMasters(); rebuild(); toast(`${n} 枚発行しました`); render(); } catch (e) { toast(e.message, true); }
+}
+function printTags() {
+  const sel = [...document.querySelectorAll('.tsel:checked')].map(c => c.value);
+  const list = sel.map(t => MAST.tags[t]).filter(Boolean);
+  printSheet(list.map(t => `<div class="ptag ${t.pri ? 'p' : ''}"><div data-qr="${esc(partQR(t))}" class="pq"></div><div class="pt"><div class="pk">部品タグ ${esc(t.tag)}</div><div class="pn mono">${esc(t.part)}</div><div class="pm">${esc(t.name)}</div><div class="pl">LOT ${esc(t.lot)} ・ ${esc(t.qty)}</div>${t.pri ? '<div class="pp">優先</div>' : ''}</div></div>`));
+}
+function printSheet(cards) {
+  const w = document.createElement('div'); w.className = 'printarea'; w.innerHTML = cards.join('');
+  document.body.appendChild(w); w.querySelectorAll('[data-qr]').forEach(el => el.innerHTML = qrSvg(el.dataset.qr));
+  document.body.classList.add('printing'); setTimeout(() => { window.print(); document.body.classList.remove('printing'); w.remove(); }, 100);
+}
+
+/* ---------------- 置き場所 ---------------- */
+VIEWS.locs = () => {
+  const locs = Object.values(MAST.locs);
+  return `<div class="head"><div><h1>置き場所</h1><div class="mute small">場所タグを台車・棚・検査エリアに貼っておくと、現場で読むだけで場所が記録されます。</div></div><button class="btn primary" onclick="printLocs()">場所タグを印刷</button></div>
+  <div class="card sect"><h2>追加する</h2><div class="row"><input type="text" id="l_code" placeholder="コード 例: C-04" style="width:120px">
+    <select id="l_type">${Object.values(LOC_KIND).map(t => `<option>${t}</option>`).join('')}</select><input type="text" id="l_name" placeholder="名称" style="width:180px">
+    <label class="row"><input type="checkbox" id="l_pz"> 優先置き場</label><button class="btn primary" onclick="addLoc()">追加</button></div></div>
+  <div class="card flush"><table class="tbl"><thead><tr><th>コード</th><th>種別</th><th>名称</th><th>優先置き場</th><th>置かれている部品</th></tr></thead><tbody>
+  ${locs.map(l => `<tr><td class="mono"><b>${esc(l.code)}</b></td><td>${esc(l.type)}</td><td>${esc(l.name)}</td><td>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</td><td class="num">${Object.values(ST.items).filter(i => i.loc === l.code).length}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">まだありません</td></tr>'}
+  </tbody></table></div>`;
+};
+async function addLoc() {
+  const code = $('l_code').value.trim().toUpperCase(); if (!code) return toast('コードを入れてください', true);
+  try { await appendRows('locs', [[code, $('l_type').value, $('l_name').value.trim(), $('l_pz').checked ? '○' : '']]); MAST = await readMasters(); toast('追加しました'); render(); } catch (e) { toast(e.message, true); }
+}
+function printLocs() {
+  printSheet(Object.values(MAST.locs).map(l => `<div class="ptag loc ${l.pz ? 'p' : ''}"><div data-qr="${esc(locQR(l))}" class="pq"></div><div class="pt"><div class="pk">置き場所 ${esc(l.type)}</div><div class="pn mono">${esc(l.code)}</div><div class="pm">${esc(l.name)}</div>${l.pz ? '<div class="pp">優先置き場</div>' : ''}</div></div>`));
+}
+
+/* ---------------- 現場端末 ---------------- */
+function fieldUrl() { const base = location.href.replace(/[^/]*(\?.*)?(#.*)?$/, ''); return `${base}index.html?c=${encodeURIComponent(CONF.clientId)}&s=${encodeURIComponent(CONF.sheetId)}`; }
+VIEWS.devices = () => {
+  const devs = Object.values(ST.devices).sort((a, b) => b.lastT - a.lastT);
+  return `<div class="head"><h1>現場端末</h1></div>
+  <div class="grid2"><section class="card"><h2>スマホを追加する</h2>
+    <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div data-qr="${esc(fieldUrl())}" style="width:170px;height:170px;flex:none"></div>
+    <div class="small"><p style="margin-top:0">スマホのカメラでこのQRを読み、現場アプリを開いてください。利用を許可されたGoogleアカウントでログインすると使えます。</p>
+    <p>スマホにアプリを入れる必要はありません。ブラウザの「ホーム画面に追加」をすると、アプリのように開けます。</p></div></div></section>
+    <section class="card"><h2>しくみ</h2><table class="kv"><tbody>
+      <tr><th>現場のスマホ</th><td>カメラでタグを読み取り(端末の中で処理)、結果だけを送る</td></tr>
+      <tr><th>Google</th><td>結果をスプレッドシートにためる。共有された人しか読み書きできない</td></tr>
+      <tr><th>この管理画面</th><td>2.5秒ごとに新しい結果だけを読み、置き場マップを更新。優先アラートを現場へ送る</td></tr>
+      <tr><th>通信が切れたら</th><td>スマホが結果をためておき、つながったら自動で送る</td></tr></tbody></table></section></div>
+  <section class="card flush" style="margin-top:16px"><table class="tbl"><thead><tr><th>端末</th><th>状態</th><th>アカウント</th><th>最終連絡</th><th>送った件数</th><th>送信待ち</th></tr></thead><tbody>
+  ${devs.map(d => `<tr><td><b>${esc(d.name)}</b></td><td>${Date.now() - d.lastT < 120000 ? '<span class="ok">● 接続中</span>' : '<span class="mute">○ 未接続</span>'}</td><td class="small">${esc(d.account)}</td><td class="small">${esc(d.last)}</td><td class="num">${d.n}</td><td class="num">${d.info && d.info.pending ? d.info.pending : 0}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">まだありません</td></tr>'}
+  </tbody></table></section>`;
+};
+
+/* ---------------- 設定 ---------------- */
+VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
+  <section class="card sect"><table class="kv"><tbody>
+    <tr><th>ログイン</th><td>${esc(ACCOUNT.email)} <button class="btn" onclick="logout()">ログアウト</button></td></tr>
+    <tr><th>スプレッドシート</th><td><a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(CONF.sheetId)}" target="_blank" rel="noopener">開く</a> <span class="mono small mute">${esc(CONF.sheetId)}</span></td></tr>
+    <tr><th>クライアントID</th><td class="mono small">${esc(CONF.clientId)}</td></tr>
+    <tr><th>通信回数</th><td class="small">この画面を開いてから ${NET.calls} 回(Googleの上限は1分あたり60回/人。スマホとPCは別のアカウントにすると余裕があります)</td></tr>
+  </tbody></table></section>
+  <section class="card"><h2>デモ用データ</h2><button class="btn" onclick="seedDemo()">デモ用のタグと置き場所を作る</button></section>`;
+
+/* ---------------- デモ用データ ---------------- */
+async function seedDemo() {
+  const T = [['IHF-30112-A', 'タービンブレード 1段', 'L2610-03', 12, 1], ['IHF-30113-A', 'タービンブレード 2段', 'L2610-04', 8, 0], ['IHF-41005-C', '燃料ノズル', 'J2610-21', 4, 0],
+    ['IHF-52001-D', 'ベアリング No.3', 'R2610-15', 2, 1], ['IHF-60340-A', 'シールリング', 'J2610-22', 30, 0], ['IHF-70015-B', '点火プラグ', 'J2610-23', 6, 0],
+    ['HW-10011-M6', '六角ボルト M6', 'B2610-01', 200, 0], ['HW-10530-S', 'ロックワイヤ', 'B2610-07', 20, 0]];
+  const L = [['T-01', '仮置き', '入荷口 左', ''], ['T-02', '仮置き', '入荷口 右', ''], ['C-01', '台車', '通常台車1', ''], ['C-02', '台車', '通常台車2', ''],
+    ['CP-01', '台車', '優先台車1', '○'], ['K-N', '検査エリア', '通常品置き場', ''], ['K-P', '検査エリア', '優先品置き場', '○'], ['TP-01', '仮置き', '優先仮置き', '○']];
+  let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +k.replace(/\D/g, '') || 0));
+  try {
+    await appendRows('tags', T.map(([p, n, l, q, pr]) => [`T${pad(++max, 4)}`, p, n, l, String(q), pr ? '優先' : '', now()]));
+    const have = new Set(Object.keys(MAST.locs));
+    const nl = L.filter(l => !have.has(l[0])); if (nl.length) await appendRows('locs', nl);
+    MAST = await readMasters(); rebuild(); toast('デモ用のタグと置き場所を作りました'); location.hash = '#tags'; render();
+  } catch (e) { toast(e.message, true); }
+}
+boot();
+</script>
+<script>if('serviceWorker' in navigator && location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{})}</script>
+</body></html>
