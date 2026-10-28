@@ -156,6 +156,7 @@ function isPriPart(p) { return !!(p.pri || (MAST.tags[p.tag] || {}).pri || ALERT
 function readyAction() {
   if (F.mode !== '置く' || !F.cart || !F.loc) return null;
   if (pending()) {
+    if (F.part.moveAsk && !F.part.moveOk) return null;   // 二重読み取りで、移し替えを選ぶ前
     const prev = PLACED[F.part.tag];
     const same = prev && prev.cart === F.cart.code && (CARTLOC[F.cart.code] || prev.loc) === F.loc.code;
     return { kind: 'place', ng: planNG(MAST, F.part.part, F.cart.code, F.loc.code), dup: same ? prev : null, move: prev && !same ? prev : null };
@@ -172,7 +173,7 @@ function renderPair() {
   const plan = put && pending() ? (MAST.plans || {})[P.part] : null;
   const planLine = k => { const b = bad(k); return b ? `<div class="sl-ng">計画: ${esc(b.want.join('・'))}</div>` : ''; };
   $('slotP').className = 'slot wide' + (P ? ' set' : '') + (P && isPriPart(P) ? ' isPri' : '') + (P && P.done ? ' done' : '') + (want === 'P' && (!P || P.done) ? ' want' : '');
-  $('slotP').innerHTML = P ? `${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}${plan ? ` <span class="sl-plan">計画: ${esc(plan.carts.join('・') || '台車指定なし')} @ ${esc(plan.locs.join('・') || '場所指定なし')}</span>` : ''}</div>`
+  $('slotP').innerHTML = P ? `${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}${plan ? ` <span class="sl-plan">計画: ${esc(plan.carts.join('・') || '台車指定なし')} @ ${esc(plan.locs.join('・') || '場所指定なし')}</span>` : ''}</div>`
     : `<div class="sl-k">${put ? '① ' : ''}部品</div><div class="sl-e">部品タグ</div>`;
   $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (put && want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
   $('slotC').innerHTML = C ? `<div class="sl-k">② 台車 <span class="pin">解除 ×</span></div><div class="sl-v mono">${esc(C.code)}</div><div class="sl-s">${esc(C.name || '')} ・ ${onCartCount(C.code)}点</div>${C.pz ? '<span class="pri">優先台車</span>' : ''}${planLine('台車')}`
@@ -241,6 +242,8 @@ function onCode(text, src = 'cam') {
     return msg(`<b class="mono">${esc(P.part)}</b> を <b>${esc(F.mode)}</b> にしました${F.mode === '保留' ? `(${esc(F.reason)})` : ''}`, 'ok');
   }
   F.part = P; F.moveCand = false;
+  // 二重読み取り(登録済みの部品)がいちばん優先。優先品・計画のチェックより先に知らせる
+  if (PLACED[P.tag]) return dupStop(PLACED[P.tag]);
   if (pri) {   // 優先品: すぐに知らせる
     beep('pri'); flash('pri');
     const pcs = Object.values(MAST.carts).filter(c => c.pz).map(c => c.code), pzs = Object.values(MAST.locs).filter(l => l.pz).map(l => l.code);
@@ -276,7 +279,7 @@ function register(force, confirmMove) {
   const r = readyAction(); if (!r) return;
   if (r.dup) return dupStop(r.dup);
   if (r.ng.length && !force) return planError(r);
-  if (r.move && F.auto && !confirmMove) return askMove(r, force);   // 自動でも、移し替えは確認してから
+  if (r.move && F.auto && !confirmMove && !F.part.moveOk) return askMove(r, force);   // 自動でも、移し替えは確認してから
   return r.kind === 'place' ? link(r.ng) : moveCart(r.ng);
 }
 function planError(r) {   // 計画と違う: 登録せずにエラー。管理にも知らせる
@@ -301,14 +304,29 @@ function planError(r) {   // 計画と違う: 登録せずにエラー。管理�
 }
 // 同じ部品を、同じ台車・置き場所にもう一度読んだ: 送らない
 function dupStop(prev) {
-  const P = F.part;
-  F.part = { ...P, done: true, ctx: ctx(), dup: true };
+  const P = F.part, pri = isPriPart(P);
+  const C = F.cart, L = F.loc;
+  const canMove = C && L && !(prev.cart === C.code && (CARTLOC[C.code] || prev.loc) === L.code);   // 固定中の台車・置き場所が今の場所と違う
   RECENT.unshift({ ev: { type: 'dup', at: now(), part: P.part, tag: P.tag, cart: prev.cart, loc: CARTLOC[prev.cart] || prev.loc, data: {} }, state: 'skip' }); renderRecent();
-  beep('dup'); flash('dup'); renderPair();
-  sheet('dup', '✓', 'この部品は登録済みです', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['いまの場所', esc(whereNow(prev)), 'ok']], '同じ場所なので、今回は記録していません。<b>数は増えていません。</b>', '', 5000);
-  say('登録済みです。数は増えていません');
-  msg(`✓ <b class="mono">${esc(P.part)}</b> は<b>登録済み</b>(${esc(whereNow(prev))})。数は増えていません`, 'dup');
+  beep('dup'); flash('dup');
+  const rows = [['部品', `<span class="mono">${esc(P.part)}</span>${pri ? ' <span class="pri">優先</span>' : ''}`], ['いまの場所', esc(whereNow(prev)), 'ok']];
+  const note = 'この部品は<b>登録済み</b>です。今回は記録していません。<b>数は増えていません。</b>';
+  clearTimeout(MOVE_T);
+  if (canMove) {   // 移し替えの可能性: 部品は保留しておき、ボタンを押したときだけ移す(押さなければ8秒で取りやめ)
+    const hold = F.part = { ...P, moveAsk: true };
+    rows.push(['移す先', `${esc(C.code)}(${esc(L.code)})`]);
+    sheet('dup', '✓', '二重読み取りです', rows, note + '<br>本当に移すときだけ、下のボタンを押してください。',
+      `<div class="sh-btns"><button class="btn sh-main" onclick="closeSheet();moveIt()">${esc(C.code)}(${esc(L.code)})へ移し替える</button></div>`, 8000);
+    MOVE_T = setTimeout(() => { if (F.part === hold) { F.part = { ...P, done: true, ctx: ctx(), dup: true }; renderPair(); } }, 8000);
+  } else {
+    F.part = { ...P, done: true, ctx: ctx(), dup: true };
+    sheet('dup', '✓', '二重読み取りです', rows, note, '', 6000);
+  }
+  renderPair();
+  say('二重読み取りです。登録済みなので、数は増えていません');
+  msg(`✓ <b>二重読み取り</b>: <b class="mono">${esc(P.part)}</b> は登録済み(${esc(whereNow(prev))})。数は増えていません`, 'dup');
 }
+function moveIt() { if (!pending()) return; clearTimeout(MOVE_T); F.part.moveOk = true; register(false, true); }
 // 別の台車・置き場所にすでに登録されている部品: 移し替えでよいか確認(数を二重に数えない)
 function askMove(r, force) {
   beep('dup'); flash('dup'); renderPair();
@@ -508,7 +526,7 @@ function renderCand() {
   const pri = t.kind === 'part' ? isPriPart(t) : t.pz;
   const reg = t.kind === 'part' && PLACED[t.tag];
   el.innerHTML = `<button class="cand k-${t.kind} ${pri ? 'pri' : ''}" onclick="confirmCand()">
-    <span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}${reg ? ` <span class="cd-reg">登録済み: ${esc(whereNow(reg))}</span>` : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
+    <span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}${reg ? ` <span class="cd-reg">二重読み取り(登録済み: ${esc(whereNow(reg))})</span>` : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
     <span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
 }
 function confirmCand() {
