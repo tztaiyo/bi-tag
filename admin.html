@@ -2632,6 +2632,14 @@ async function appendRows(tab, rows) {
   const m = ((r.updates || {}).updatedRange || '').match(/![A-Z]+(\d+)/);
   return m ? +m[1] : 0;
 }
+// 新しいイベントと、先頭のイベントID(デモのリセットを見分けるため)を1回の通信で読む
+async function readEventsSince(from) {
+  const qs = [`'${TABS.events.title}'!A2:A2`, rng('events', from)].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`);
+  const [a, b] = (r.valueRanges || []).map(v => v.values || []);
+  return { first: ((a || [])[0] || [])[0] || '', rows: b || [] };
+}
+async function clearRows(tab) { await gapi(`/values/${encodeURIComponent(rng(tab, 2))}:clear`, { method: 'POST', body: '{}' }); }
 async function readRows(tab, from = 2) {
   const r = await gapi(`/values/${encodeURIComponent(rng(tab, from))}?valueRenderOption=FORMATTED_VALUE`);
   return (r.values || []);
@@ -2797,6 +2805,7 @@ async function loadAll() {
   try {
     MAST = await readMasters();
     const rows = await readRows('events');
+    FIRSTID = (rows[0] || [])[0] || '';
     EVENTS = rows.filter(r => r[0]).map((r, i) => rowEvent(r, i + 2));
     EVENTS.forEach(e => RECV[e.id] = 0);
     LASTROW = 1 + rows.length; rebuild(); LOADED = true;
@@ -2813,7 +2822,9 @@ async function poll() {
   if (POLLING || !tokenValid()) return renderTop(); POLLING = true;
   try {
     if (Date.now() - MAST_T > 30000) { MAST = await readMasters(); MAST_T = Date.now(); }
-    const rows = await readRows('events', LASTROW + 1);
+    const { first, rows } = await readEventsSince(LASTROW + 1);
+    if (FIRSTID && first !== FIRSTID) { clearLocal(); await loadAll(); toast('デモがリセットされました'); return; }   // 別のPCでリセットされた
+    FIRSTID = first;
     const news = rows.filter(r => r[0]).map((r, i) => rowEvent(r, LASTROW + 1 + i)).filter(e => !(e.id in RECV));
     LASTROW += rows.length;
     if (news.length) {
@@ -2829,6 +2840,23 @@ function onArrivals(news) {
     if (e.type === 'ng') toast(`計画と違う置き方を検知しました: ${e.part || '台車 ' + e.cart} → ${e.cart} @ ${e.loc}(現場では未登録)`, true);
     if (e.type === 'ack') { const a = ST.alerts.find(x => x.id === e.data.alert); if (a) toast(`${e.device} がアラートを確認しました(${e.part})`); renderAlertModal(); }
   }
+}
+let FIRSTID = '';
+function clearLocal() { EVENTS = []; FEED = []; LASTROW = 1; FIRSTID = ''; for (const o of [RECV, FRESH]) for (const k of Object.keys(o)) delete o[k]; rebuild(); }
+/* ---------------- デモのリセット ---------------- */
+async function resetDemo() {
+  let plan = false;
+  const p = dialog(`<h3 style="margin:0 0 8px">デモをリセット</h3><div class="dlg-msg">現場で登録した記録(置いた・台車の移動・検査済・保留・優先アラート)を<b>すべて消して</b>、はじめからにします。<br><span class="small mute">タグ・台車・置き場所はそのまま残ります。現場のスマホも数秒で自動的にリセットされます。</span></div>
+    <label class="row" style="margin-top:12px"><input type="checkbox" id="rs_plan" style="width:auto;margin:0"> 計画も「仮の計画」に戻す</label>`, [{ label: 'やめる' }, { label: 'リセットする', cls: 'red', ok: true }]);
+  setTimeout(() => { const c = $('rs_plan'); if (c) c.onchange = () => { plan = c.checked; }; });
+  if ((await p).i !== 1) return;
+  try {
+    await clearRows('events');
+    if (plan) { await ensureTabs(); await clearRows('plans'); await appendRows('plans', DEMO_PLAN); }
+    await appendRows('events', [eventRow(newEvent('reset', { data: { plan } }))]);   // 先頭がこの行に変わる → スマホがリセットに気づく
+    closeAlert(); clearLocal(); MAST = await readMasters(); await loadAll();
+    toast(plan ? '登録の記録を消し、計画を仮の計画に戻しました' : '登録の記録を消しました。はじめからデモできます');
+  } catch (e) { toast('リセットできませんでした: ' + e.message, true); }
 }
 async function post(ev) {   // 管理画面からのイベント(アラート・保留解除など)
   const t0 = performance.now();
@@ -2873,7 +2901,7 @@ VIEWS.dash = () => {
     <button class="btn primary big" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button>
     <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)、台車3台、置き場所5か所と、仮の計画を登録します。「タグ発行」「台車・置き場所」から印刷できます。</p></div>`;
   return `<div class="head"><div><h1>現場の状況</h1><div class="mute small">現場のスマホがタグを読むと、数秒でここに反映されます。</div></div>
-    <button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div>
+    <div class="row"><button class="btn" onclick="resetDemo()">デモをリセット</button><button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div></div>
     <section class="flowcard"><div class="flow" id="flow">
       <div class="fnode dev" id="fn-dev"><div class="fn-t">現場端末</div><div id="fn-devs"></div></div>
       <div class="lane" id="lane1"><span>結果だけを送信 →</span></div>
@@ -2921,7 +2949,7 @@ function feedRow(f) {
   const e = f.e, d = e.data || {};
   const delay = f.recv && d.t ? Math.max(0, f.recv - d.t) : null;
   const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → 台車 <b>${esc(e.cart || '-')}</b> @ <b>${esc(e.loc)}</b>${d.from ? `<div class="small mute">移し替え(${esc(d.from)} から)</div>` : ''}` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ移動` : e.type === 'ng' ? `<b style="color:var(--pri)">計画外を検知(未登録)</b> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}<div class="small" style="color:var(--pri)">${(d.reasons || []).map(esc).join(' / ')}</div>` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
-    : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : esc(e.type);
+    : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : e.type === 'reset' ? '<b>デモをリセット</b>(登録の記録を消去)' : esc(e.type);
   const dir = f.out || e.device === PC_NAME() ? 'out' : 'in';
   return `<div class="fr ${dir} ${d.pri ? 'p' : ''} ${f.recv && Date.now() - f.recv < 5000 ? 'new' : ''}"><span class="fr-t">${hms(e.at)}</span>
     <span class="fr-d">${dir === 'out' ? '管理 → 現場' : esc(e.device) + ' →'}</span><span class="fr-w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>
@@ -3118,7 +3146,7 @@ VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
     <tr><th>クライアントID</th><td class="mono small">${esc(CONF.clientId)}</td></tr>
     <tr><th>通信回数</th><td class="small">この画面を開いてから ${NET.calls} 回(Googleの上限は1分あたり60回/人。スマホとPCは別のアカウントにすると余裕があります)</td></tr>
   </tbody></table></section>
-  <section class="card"><h2>デモ用データ</h2><button class="btn" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button></section>`;
+  <section class="card"><h2>デモ用データ</h2><div class="row"><button class="btn" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button><button class="btn danger" onclick="resetDemo()">デモをリセット(登録の記録を消す)</button></div></section>`;
 
 /* ---------------- デモ用データ ---------------- */
 async function seedDemo() {

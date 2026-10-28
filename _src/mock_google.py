@@ -74,6 +74,9 @@ class H(SimpleHTTPRequestHandler):
             m = re.match(r"/values/(.+?)(:append|:clear)?$", rest)
             if m:
                 t, r1, r2 = parse_range(m.group(1)); rows = SHEETS.setdefault(t, [])
+                if m.group(2) == ":clear":
+                    del rows[r1 - 1:(r2 if r2 else None)]
+                    return self.send_json({})
                 if m.group(2) == ":append":
                     start = len(rows) + 1
                     for v in body["values"]: rows.append([str(x) for x in v])

@@ -177,6 +177,14 @@ async function appendRows(tab, rows) {
   const m = ((r.updates || {}).updatedRange || '').match(/![A-Z]+(\d+)/);
   return m ? +m[1] : 0;
 }
+// 新しいイベントと、先頭のイベントID(デモのリセットを見分けるため)を1回の通信で読む
+async function readEventsSince(from) {
+  const qs = [`'${TABS.events.title}'!A2:A2`, rng('events', from)].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`);
+  const [a, b] = (r.valueRanges || []).map(v => v.values || []);
+  return { first: ((a || [])[0] || [])[0] || '', rows: b || [] };
+}
+async function clearRows(tab) { await gapi(`/values/${encodeURIComponent(rng(tab, 2))}:clear`, { method: 'POST', body: '{}' }); }
 async function readRows(tab, from = 2) {
   const r = await gapi(`/values/${encodeURIComponent(rng(tab, from))}?valueRenderOption=FORMATTED_VALUE`);
   return (r.values || []);

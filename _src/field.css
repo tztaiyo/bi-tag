@@ -105,3 +105,10 @@ body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding
 .autoclose .bar{background:#8fb6ff;height:3px}
 .act{grid-template-columns:1fr}
 .hist-h b{white-space:nowrap}
+/* 登録済み(数は増やさない)をはっきり見せる */
+.dupbox{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start}
+.db-i{width:44px;height:44px;border-radius:50%;background:#fff;color:#16345f;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700}
+.db-t{font-size:17px;font-weight:700;color:#fff}.db-w{margin-top:2px}.db-s{font-size:12.5px;opacity:.85;margin-top:4px}
+.msg.dup{background:#1d4f9c;color:#e6efff;border:2px solid #8fb6ff}
+.sl-band{margin:-9px -10px 6px;padding:4px 10px;background:#1d5fc4;color:#fff;font-size:12px;font-weight:700;border-radius:9px 9px 0 0}
+.cd-reg{font-size:11px;font-weight:700;color:#fff;background:#1d5fc4;border-radius:4px;padding:1px 6px}
