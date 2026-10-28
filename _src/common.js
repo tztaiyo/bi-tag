@@ -37,11 +37,11 @@ let AUDIO = null;
 function beep(kind = 'ok') {   // ok: 短い高音 / pri: 2回 / ng: 低音
   try {
     AUDIO = AUDIO || new AudioContext();
-    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : kind === 'dup' ? [[660, .08], [0, .04], [440, .12]] : [[220, .3]];
+    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : kind === 'dup' ? [[660, .08], [0, .04], [440, .12]] : kind === 'tick' ? [[1760, .03]] : [[220, .3]];
     let t = AUDIO.currentTime;
     for (const [f, d] of tones) { if (f) { const o = AUDIO.createOscillator(), g = AUDIO.createGain(); o.frequency.value = f; g.gain.value = .18; o.connect(g); g.connect(AUDIO.destination); o.start(t); o.stop(t + d); } t += d; }
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : kind === 'dup' ? [60, 50, 60] : 40); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : kind === 'dup' ? [60, 50, 60] : kind === 'tick' ? 15 : 40); } catch (e) { }
 }
 
 /* ---------------- 設定(スプレッドシートとログイン用ID) ----------------

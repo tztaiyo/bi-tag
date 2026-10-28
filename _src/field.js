@@ -67,6 +67,7 @@ function renderShell() {
     <div class="frame"></div><div class="flash" id="flash"></div>
     <div class="camstart" id="camstart"><button class="btn primary big" onclick="startCamera()">スキャンを開始</button><div class="small">カメラを使ってタグを読み取ります</div></div>
     <div class="camhint" id="camhint"></div>
+    <div class="candwrap" id="candwrap"></div>
   </section>
   <nav class="modes">${MODES.map(m => `<button data-m="${m}" onclick="setMode('${m}')">${m}</button>`).join('')}</nav>
   <div class="reasons" id="reasons" hidden>${HOLD_REASONS.map(r => `<button data-r="${r}" onclick="setReason('${r}')">${r}</button>`).join('')}</div>
@@ -146,7 +147,7 @@ function renderAct() {   // 手動登録のときの「登録する」ボタン
   if (!r) { el.hidden = true; el.innerHTML = ''; return; }
   const C = F.cart.code, L = F.loc.code;
   el.hidden = false;
-  el.innerHTML = `<button class="btn regbtn ${r.dup ? 'dupb' : r.move ? 'mvb' : r.ng.length ? 'ngb' : ''}" onclick="register()">${r.kind === 'place' ? (r.dup ? '登録済み(押しても送りません)' : r.move ? '移し替えを登録' : '登録する') : '台車ごと移動を登録'}<small>${r.kind === 'place' ? `${esc(F.part.part)}${r.move ? ` : ${esc(whereNow(r.move))} から` : ''} → ${esc(C)} @ ${esc(L)}` : `${esc(C)} → ${esc(L)}(載っている部品も移動)`}</small></button><button class="btn cancel" onclick="cancelReady()">取消</button>`;
+  el.innerHTML = `<button class="btn regbtn ${r.dup ? 'dupb' : r.move ? 'mvb' : r.ng.length ? 'ngb' : ''}" onclick="register()">${r.kind === 'place' ? (r.dup ? '登録済み(押しても送りません)' : r.move ? '移し替えを登録' : '登録する') : '台車ごと移動を登録'}<small>${r.kind === 'place' ? `${esc(F.part.part)}${r.move ? ` : ${esc(whereNow(r.move))} から` : ''} → ${esc(C)} @ ${esc(L)}` : `${esc(C)} → ${esc(L)}(載っている部品も移動)`}</small></button>`;
 }
 function cancelReady() { const r = readyAction(); if (!r) return; if (r.kind === 'place') F.part = null; F.moveCand = false; renderPair(); msg('取り消しました(登録していません)'); }
 function msg(html, cls = '') { $('msg').className = 'msg ' + cls; $('msg').innerHTML = html; }
@@ -254,8 +255,11 @@ function askMove(r, force) {
   beep('dup'); flash('dup'); renderPair();
   const P = F.part;
   msg(`<b>この部品はすでに登録されています</b><br><b class="mono">${esc(P.part)}</b>(${esc(P.tag)})は <b>${esc(whereNow(r.move))}</b> に登録済み(${hms(r.move.at)} ${esc(r.move.by)})。<br>
-    <b>${esc(F.cart.code)}(${esc(F.loc.code)})</b> へ移し替えますか?<div class="ngact"><button class="btn mv" onclick="register(${force ? 'true' : 'false'}, true)">移し替える</button> <button class="btn" onclick="cancelReady()">やめる</button></div>`, 'dup');
+    <b>${esc(F.cart.code)}(${esc(F.loc.code)})</b> へ移し替えますか?<div class="ngact"><button class="btn mv" onclick="register(${force ? 'true' : 'false'}, true)">移し替える</button><span class="small autoclose">押さなければ8秒で取りやめ<i class="bar" style="animation-duration:8s"></i></span></div>`, 'dup');
+  clearTimeout(MOVE_T);
+  MOVE_T = setTimeout(() => { if (F.part === P && pending()) { F.part = null; renderPair(); msg('移し替えはしませんでした(登録していません)'); } }, 8000);
 }
+let MOVE_T = 0;
 function linkedFx() { const el = $('pair'); el.classList.remove('linked'); void el.offsetWidth; el.classList.add('linked'); }
 function link(ng = []) {
   const P = F.part, C = F.cart, L = F.loc, pri = isPriPart(P);
@@ -376,17 +380,74 @@ async function startCamera() {
     $('camstart').innerHTML = `<div class="small">カメラを使えませんでした(${esc(e.name || e.message)})。<br>「写真で読む」か手入力で続けられます。</div><button class="btn" onclick="photoScan()">写真で読む</button>`;
   }
 }
+/* カメラが読んだQRはすぐには使わない:
+   ① 枠の中で2回続けて読めたら「候補カード」を出す
+   ② カードをタップしたときに初めて確定(台車・置き場所の固定や、登録はそのあと)
+   ③ タップしなければ4秒で自動的に消える(取消ボタンは押さなくてよい) */
 async function decodeFrame(src, w, h) {
-  if (DETECTOR) { try { const r = await DETECTOR.detect(src); if (r.length) return r[0].rawValue; } catch (e) { } }
+  if (DETECTOR) {
+    try { const r = await DETECTOR.detect(src); if (r.length) { const b = r[0].boundingBox; return { text: r[0].rawValue, cx: b.x + b.width / 2, cy: b.y + b.height / 2 }; } } catch (e) { }
+  }
   const c = $('cv'); const sc = Math.min(1, 720 / Math.max(w, h)); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
   const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, c.width, c.height);
   const q = jsQR(x.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
-  return q && q.data;
+  if (!q) return null;
+  const L = q.location, cx = (L.topLeftCorner.x + L.bottomRightCorner.x) / 2 / sc, cy = (L.topLeftCorner.y + L.bottomRightCorner.y) / 2 / sc;
+  return { text: q.data, cx, cy };
+}
+function inFrame(v, d) {   // 画面の白い枠の中に写っているか(となりのタグを拾わない)
+  const box = $('cam'), w = box.clientWidth, h = box.clientHeight, vw = v.videoWidth, vh = v.videoHeight;
+  const scale = Math.max(w / vw, h / vh), half = Math.min(.58 * w, .84 * h) / scale * .6;
+  return Math.abs(d.cx - vw / 2) < half && Math.abs(d.cy - vh / 2) < half;
+}
+let LASTDET = { text: '', n: 0 }, CAND = null, CAND_T = 0;
+const QUIET = {};   // タップしなかった・確定したタグを、しばらく出し直さない
+function worthIt(t) {   // 読んでも何も変わらないタグは候補にしない
+  if (!t) return false;
+  if (F.mode === '置く') {
+    if (t.kind === 'cart' && F.cart && F.cart.code === t.code) return false;
+    if (t.kind === 'loc' && F.loc && F.loc.code === t.code) return false;
+    if (t.kind === 'part' && F.part && F.part.tag === t.tag && (pending() || F.part.ctx === ctx())) return false;
+  } else if (t.kind === 'part' && F.part && F.part.tag === t.tag && F.part.ctx === ctx()) return false;
+  return true;
+}
+function detected(text) {
+  const nowT = Date.now();
+  if (QUIET[text] && nowT < QUIET[text]) return;
+  if (CAND && CAND.text === text) return;
+  if (CAND && nowT - CAND.at < 1200) return;   // 出したばかりのカードはすぐには入れ替えない
+  const t = parseTag(text); if (!worthIt(t)) return;
+  CAND = { text, t, at: nowT }; beep('tick'); renderCand();
+  clearTimeout(CAND_T); CAND_T = setTimeout(() => { if (CAND && CAND.text === text) { QUIET[text] = Date.now() + 3000; CAND = null; renderCand(); } }, 4000);
+}
+function renderCand() {
+  const el = $('candwrap'); if (!el) return;
+  if (!CAND) { el.innerHTML = ''; return; }
+  const t = CAND.t;
+  const lab = t.kind === 'part' ? '① 部品タグ' : t.kind === 'cart' ? '② 台車タグ' : '③ 置き場所タグ';
+  const v = t.kind === 'part' ? t.part : t.code;
+  const sub = t.kind === 'part' ? `${(MAST.tags[t.tag] || {}).name || ''} ・ ${t.tag}` : t.kind === 'cart' ? ((MAST.carts[t.code] || {}).name || '台車') : `${t.type} ${(MAST.locs[t.code] || {}).name || ''}`;
+  const pri = t.kind === 'part' ? isPriPart(t) : t.pz;
+  el.innerHTML = `<button class="cand k-${t.kind} ${pri ? 'pri' : ''}" onclick="confirmCand()">
+    <span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
+    <span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
+}
+function confirmCand() {
+  const c = CAND; if (!c) return;
+  CAND = null; clearTimeout(CAND_T); renderCand();
+  QUIET[c.text] = Date.now() + 2500;
+  onCode(c.text, 'tap');
 }
 async function scanLoop() {
   const v = $('video');
   if (v && v.readyState >= 2 && !ALERTQ.length) {
-    try { const code = await decodeFrame(v, v.videoWidth, v.videoHeight); if (code) onCode(code); } catch (e) { }
+    try {
+      const d = await decodeFrame(v, v.videoWidth, v.videoHeight);
+      if (d && d.text && inFrame(v, d)) {
+        LASTDET = LASTDET.text === d.text ? { text: d.text, n: LASTDET.n + 1 } : { text: d.text, n: 1 };
+        if (LASTDET.n >= 2) detected(d.text);   // 2回続けて同じものが読めたときだけ
+      } else LASTDET = { text: '', n: 0 };
+    } catch (e) { }
   }
   setTimeout(scanLoop, DETECTOR ? 120 : 160);
 }
