@@ -154,9 +154,10 @@ async function gapi(path, opt = {}) {
   return r.json();
 }
 const TABS = {
-  events: { title: 'イベント', cols: ['ID', '日時', '端末', 'アカウント', '種類', 'タグ', '品番', 'ロット', '場所', '内容'] },
+  events: { title: 'イベント', cols: ['ID', '日時', '端末', 'アカウント', '種類', 'タグ', '品番', 'ロット', '場所', '内容', '台車'] },
   tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時'] },
   locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
+  carts: { title: '台車', cols: ['台車番号', '名称', '優先台車'] },
 };
 const colLetter = n => String.fromCharCode(65 + n - 1);
 const rng = (tab, from = 2, to = '') => `'${TABS[tab].title}'!A${from}:${colLetter(TABS[tab].cols.length)}${to}`;
@@ -164,6 +165,8 @@ async function ensureTabs() {
   const meta = await gapi('?fields=sheets.properties.title');
   const have = new Set((meta.sheets || []).map(s => s.properties.title));
   const missing = Object.values(TABS).filter(t => !have.has(t.title));
+  if (have.has(TABS.events.title))   // 列を追加したときのために、イベントの見出し行をそろえる
+    await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: [{ range: `'${TABS.events.title}'!A1`, values: [TABS.events.cols] }] }) });
   if (!missing.length) return;
   await gapi(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: missing.map(t => ({ addSheet: { properties: { title: t.title, gridProperties: { frozenRowCount: 1 } } } })) }) });
   await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: missing.map(t => ({ range: `'${t.title}'!A1`, values: [t.cols] })) }) });
@@ -177,63 +180,90 @@ async function readRows(tab, from = 2) {
   const r = await gapi(`/values/${encodeURIComponent(rng(tab, from))}?valueRenderOption=FORMATTED_VALUE`);
   return (r.values || []);
 }
-async function readMasters() {
-  const qs = ['tags', 'locs'].map(t => 'ranges=' + encodeURIComponent(rng(t))).join('&');
-  const r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`);
-  const [tv, lv] = (r.valueRanges || []).map(v => v.values || []);
+async function readMasters(retry = true) {
+  const qs = ['tags', 'locs', 'carts'].map(t => 'ranges=' + encodeURIComponent(rng(t))).join('&');
+  let r;
+  try { r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`); }
+  catch (e) {   // 以前の版で作ったスプレッドシートには「台車」の表がないので、作ってから読み直す
+    if (!retry || e instanceof NeedLogin || e instanceof NoAccess) throw e;
+    await ensureTabs(); NET.online = true; return readMasters(false);
+  }
+  const [tv, lv, cv] = (r.valueRanges || []).map(v => v.values || []);
+  const locs = {}, carts = {};
+  (lv || []).filter(r => r[0]).forEach(r => {
+    // 以前の版で「置き場所(種別=台車)」として登録したものは、台車として扱う
+    if (r[1] === '台車') carts[r[0]] = { code: r[0], name: r[2] || '', pz: r[3] === '○' };
+    else locs[r[0]] = { code: r[0], type: r[1] || '', name: r[2] || '', pz: r[3] === '○' };
+  });
+  (cv || []).filter(r => r[0]).forEach(r => { carts[r[0]] = { code: r[0], name: r[1] || '', pz: r[2] === '○' }; });
   return {
     tags: Object.fromEntries((tv || []).filter(r => r[0]).map(r => [r[0], { tag: r[0], part: r[1] || '', name: r[2] || '', lot: r[3] || '', qty: r[4] || '', pri: r[5] === '優先', issued: r[6] || '' }])),
-    locs: Object.fromEntries((lv || []).filter(r => r[0]).map(r => [r[0], { code: r[0], type: r[1] || '', name: r[2] || '', pz: r[3] === '○' }])),
+    locs, carts,
   };
 }
 
 /* ---------------- タグの形式(QRの中身) ----------------
    部品タグ: BI-T;ID=T0001;PN=IHF-30112-A;LOT=L2610-03;Q=12;P=1   (P=1 なら発行時点で優先)
-   場所タグ: BI-L;ID=CP-01;K=CART;PZ=1                              (PZ=1 なら優先置き場)
-   タグだけで品番・優先・場所の種類が分かるので、通信できない場所でも判定できる */
-const LOC_KIND = { TEMP: '仮置き', CART: '台車', INSP: '検査エリア' };
+   台車タグ: BI-C;ID=CP-01;PZ=1                                     (PZ=1 なら優先台車)
+   場所タグ: BI-L;ID=K-P;K=INSP;PZ=1                                (PZ=1 なら優先置き場)
+   タグだけで品番・優先・種類が分かるので、通信できない場所でも判定できる */
+const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', AREA: '置き場' };
 const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
 function parseTag(text) {
   const s = String(text || '').trim();
-  const m = s.match(/^BI-([TL]);(.*)$/); if (!m) return null;
+  const m = s.match(/^BI-([TLC]);(.*)$/); if (!m) return null;
   const f = Object.fromEntries(m[2].split(';').map(p => { const i = p.indexOf('='); return [p.slice(0, i), p.slice(i + 1)]; }));
   if (m[1] === 'T') return f.ID ? { kind: 'part', tag: f.ID, part: f.PN || '', lot: f.LOT || '', qty: f.Q || '', pri: f.P === '1' } : null;
+  if (m[1] === 'C' || f.K === 'CART') return f.ID ? { kind: 'cart', code: f.ID, pz: f.PZ === '1' } : null;   // 以前の台車タグ(BI-L;K=CART)も台車として読む
   return f.ID ? { kind: 'loc', code: f.ID, type: LOC_KIND[f.K] || f.K || '', pz: f.PZ === '1' } : null;
 }
 const partQR = t => `BI-T;ID=${t.tag};PN=${t.part};LOT=${t.lot};Q=${t.qty};P=${t.pri ? 1 : 0}`;
-const locQR = l => `BI-L;ID=${l.code};K=${KIND_OF[l.type] || 'TEMP'};PZ=${l.pz ? 1 : 0}`;
+const locQR = l => `BI-L;ID=${l.code};K=${KIND_OF[l.type] || 'AREA'};PZ=${l.pz ? 1 : 0}`;
+const cartQR = c => `BI-C;ID=${c.code};PZ=${c.pz ? 1 : 0}`;
 function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true }); }
 
 /* ---------------- イベント(出来事)と、いまの状態の組み立て ----------------
-   種類: place(場所に置いた) / status(検査済・保留・解除) / alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
+   種類: place(部品を台車に載せ、その台車が置き場所にある) / cart(台車ごと置き場所を移動) / status(検査済・保留・解除)
+         alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
 const STATUSES = ['未受入', '未検査', '検査済', '保留'];
 const HOLD_REASONS = ['数量違い', '不良疑い', '書類不備', 'その他'];
-function eventRow(e) { return [e.id, e.at, e.device, e.account, e.type, e.tag || '', e.part || '', e.lot || '', e.loc || '', JSON.stringify(e.data || {})]; }
+function eventRow(e) { return [e.id, e.at, e.device, e.account, e.type, e.tag || '', e.part || '', e.lot || '', e.loc || '', JSON.stringify(e.data || {}), e.cart || '']; }
 function rowEvent(r, rowNo) {
   let data = {}; try { data = JSON.parse(r[9] || '{}'); } catch (e) { }
-  return { id: r[0], at: r[1], device: r[2], account: r[3], type: r[4], tag: r[5], part: r[6], lot: r[7], loc: r[8], data, row: rowNo, bytes: (r.join('').length + 20) };
+  return { id: r[0], at: r[1], device: r[2], account: r[3], type: r[4], tag: r[5], part: r[6], lot: r[7], loc: r[8], data, cart: r[10] || data.cart || '', row: rowNo, bytes: (r.join('').length + 20) };
 }
 function newEvent(type, f = {}) {
   return { id: 'E' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase(), at: now(), device: DEVICE.name, account: ACCOUNT.email, type, ...f, data: { t: Date.now(), ...(f.data || {}) } };
 }
 function buildState(masters, events) {
-  const items = {};
-  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', loc: '', since: '', by: '', hist: [] });
+  const items = {}, carts = {};
+  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [] });
+  const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
   for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
+  for (const c of Object.keys(masters.carts || {})) cart(c);
   const alerts = [], devices = {};
   for (const e of events) {
     const d = devices[e.device] || (devices[e.device] = { name: e.device, account: e.account, last: '', lastT: 0, n: 0 });
     d.last = e.at; d.lastT = e.data.t || 0; d.n++; if (e.type === 'hello') d.info = e.data;
-    if (e.type === 'place' || e.type === 'status') {
+    if (e.type === 'place') {
       const it = item(e.tag, e);
-      if (e.type === 'place') { if (it.status === '未受入') it.status = '未検査'; it.loc = e.loc; it.since = e.at; it.by = e.device; if (e.data.pri && !it.pri) { it.pri = true; it.priSrc = 'タグ'; } }
-      else {
-        const to = e.data.to;
-        if (to === '保留') { it.prev = it.status === '保留' ? it.prev : it.status; it.status = '保留'; it.hold = e.data.reason || ''; }
-        else if (to === '解除') { it.status = it.prev || '未検査'; it.hold = ''; }
-        else it.status = to;
-        if (it.status === '未受入') it.status = '未検査';
-      }
+      if (it.status === '未受入') it.status = '未検査';
+      // 以前の版の記録(台車を置き場所として読んだもの)は、台車に載せたことにする
+      const cc = e.cart || ((masters.carts || {})[e.loc] ? e.loc : '');
+      if (cc) { it.cart = cc; it.direct = ''; if (e.cart) Object.assign(cart(cc), { loc: e.loc, since: e.at, by: e.device }); }
+      else { it.cart = ''; it.direct = e.loc; }
+      it.since = e.at; it.by = e.device;
+      if (e.data.pri && !it.pri) { it.pri = true; it.priSrc = 'タグ'; }
+      it.hist.push(e);
+    } else if (e.type === 'cart') {
+      Object.assign(cart(e.cart), { loc: e.loc, since: e.at, by: e.device });
+      for (const it of Object.values(items)) if (it.cart === e.cart) it.hist.push(e);
+    } else if (e.type === 'status') {
+      const it = item(e.tag, e), to = e.data.to;
+      if (to === '保留') { it.prev = it.status === '保留' ? it.prev : it.status; it.status = '保留'; it.hold = e.data.reason || ''; }
+      else if (to === '解除') { it.status = it.prev || '未検査'; it.hold = ''; }
+      else it.status = to;
+      if (it.status === '未受入') it.status = '未検査';
       it.hist.push(e);
     } else if (e.type === 'alert') {
       alerts.push({ ...e, acks: [] });
@@ -242,7 +272,9 @@ function buildState(masters, events) {
       const a = alerts.find(x => x.id === e.data.alert); if (a) a.acks.push(e);
     }
   }
-  return { items, alerts, devices };
+  // 部品のいまの場所 = 載っている台車の置き場所(台車がなければ直接置いた場所)
+  for (const it of Object.values(items)) it.loc = it.cart ? (carts[it.cart] || {}).loc || '' : it.direct;
+  return { items, carts, alerts, devices };
 }
 
 /* ---------------- 端末の名前 ---------------- */

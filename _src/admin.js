@@ -3,7 +3,7 @@
    - 現場のスマホとは別のアプリ。共有のスプレッドシートを数秒ごとに読み、届いた分だけ反映する
    - 「通信の流れ」で、スマホ → Google → この画面 のやりとりを目で見えるようにする
    ===================================================================== */
-let MAST = { tags: {}, locs: {} }, EVENTS = [], ST = { items: {}, alerts: [], devices: {} };
+let MAST = { tags: {}, locs: {}, carts: {} }, EVENTS = [], ST = { items: {}, carts: {}, alerts: [], devices: {} };
 let LASTROW = 1, LOADED = false;
 const RECV = {};          // イベントID → この画面が受け取った時刻
 const FRESH = {};         // 最近変わったタグ(置き場マップで光らせる)
@@ -53,7 +53,7 @@ async function poll() {
     const news = rows.filter(r => r[0]).map((r, i) => rowEvent(r, LASTROW + 1 + i)).filter(e => !(e.id in RECV));
     LASTROW += rows.length;
     if (news.length) {
-      for (const e of news) { RECV[e.id] = Date.now(); EVENTS.push(e); if (e.tag) FRESH[e.tag] = Date.now(); FEED.unshift({ e, recv: Date.now() }); animateFlow(e); }
+      for (const e of news) { RECV[e.id] = Date.now(); EVENTS.push(e); if (e.tag) FRESH[e.tag] = Date.now(); if (e.cart) FRESH['cart:' + e.cart] = Date.now(); FEED.unshift({ e, recv: Date.now() }); animateFlow(e); }
       FEED = FEED.slice(0, 40); rebuild(); renderLive(); onArrivals(news);
     }
   } catch (e) { netError(e); }
@@ -61,7 +61,7 @@ async function poll() {
 }
 function onArrivals(news) {
   for (const e of news) {   // 優先品を通常の場所に置いた、などは画面上で知らせる
-    if (e.type === 'place' && e.data.pri && !e.data.pz) toast(`優先品 ${e.part} が通常の置き場所(${e.loc})に置かれました`, true);
+    if (e.type === 'place' && e.data.pri && !e.data.pz && !e.data.cartPz) toast(`優先品 ${e.part} が通常の台車・置き場所(${e.cart || ''} @ ${e.loc})に置かれました`, true);
     if (e.type === 'ack') { const a = ST.alerts.find(x => x.id === e.data.alert); if (a) toast(`${e.device} がアラートを確認しました(${e.part})`); renderAlertModal(); }
   }
 }
@@ -73,7 +73,7 @@ async function post(ev) {   // 管理画面からのイベント(アラート・
 }
 
 /* ---------------- 画面の骨組み ---------------- */
-const NAV = [['dash', '現場の状況'], ['items', '部品一覧'], ['tags', 'タグ発行'], ['locs', '置き場所'], ['devices', '現場端末'], ['setup', '設定']];
+const NAV = [['dash', '現場の状況'], ['items', '部品一覧'], ['tags', 'タグ発行'], ['locs', '台車・置き場所'], ['devices', '現場端末'], ['setup', '設定']];
 function render() {
   $('app').innerHTML = `<header class="top"><div class="brand">受入・検査 管理画面<small>BLUE IMPULSE</small></div>
     <nav class="nav">${NAV.map(([k, n]) => `<a href="#${k}" class="${VIEW === k ? 'on' : ''}">${n}</a>`).join('')}</nav>
@@ -91,14 +91,19 @@ function renderTop() {
 const stH = s => `<span class="st st-${s}">${s}</span>`;
 const priH = it => it.pri ? `<span class="pri ${it.priSrc === 'アラート' ? 'alert' : ''}">優先${it.priSrc === 'アラート' ? '(アラート)' : ''}</span>` : '';
 const locName = c => { const l = MAST.locs[c]; return l ? `${l.type} ${c}` : c; };
+const cartOf = c => ST.carts[c] || { code: c, name: '', pz: false, loc: '' };
+// 部品のいまの場所: 「台車 C-01(仮置き T-01)」
+const whereOf = i => i.cart ? `台車 ${i.cart}(${cartOf(i.cart).loc ? locName(cartOf(i.cart).loc) : '置き場所 未記録'})` : i.loc ? locName(i.loc) : '';
+const priOK = i => (i.cart && cartOf(i.cart).pz) || (i.loc && (MAST.locs[i.loc] || {}).pz);
+const placed = i => !!(i.cart || i.loc);
 const VIEWS = {};
 
 /* ---------------- 現場の状況(ダッシュボード) ---------------- */
 VIEWS.dash = () => {
   if (!Object.keys(MAST.tags).length && !EVENTS.some(e => e.type === 'place')) return `<div class="card welcome"><h2>はじめに</h2>
     <p>共有のスプレッドシートにはまだタグがありません。デモ用のタグと置き場所を作ると、すぐに試せます。</p>
-    <button class="btn primary big" onclick="seedDemo()">デモ用のタグと置き場所を作る</button>
-    <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)と置き場所8か所を登録します。「タグ発行」「置き場所」から印刷できます。</p></div>`;
+    <button class="btn primary big" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button>
+    <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)、台車3台、置き場所5か所を登録します。「タグ発行」「台車・置き場所」から印刷できます。</p></div>`;
   return `<div class="head"><div><h1>現場の状況</h1><div class="mute small">現場のスマホがタグを読むと、数秒でここに反映されます。</div></div>
     <button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div>
     <section class="flowcard"><div class="flow" id="flow">
@@ -118,29 +123,36 @@ function dashLive() {
     const fd = $('fn-devs'); if (fd) fd.innerHTML = devs.slice(0, 4).map(d => `<div class="fdev"><i class="dot ${Date.now() - d.lastT < 120000 ? 'on' : ''}"></i>${esc(d.name)}</div>`).join('') || '<div class="fn-s">まだ接続なし</div>';
     const ps = $('fn-pcst'); if (ps) ps.textContent = `受信 ${EVENTS.length} 件`;
   });
-  const byLoc = {}; items.filter(i => i.loc).forEach(i => (byLoc[i.loc] = byLoc[i.loc] || []).push(i));
-  const groups = ['仮置き', '台車', '検査エリア'];
-  const locs = Object.values(MAST.locs);
-  Object.keys(byLoc).filter(c => !MAST.locs[c]).forEach(c => locs.push({ code: c, type: 'その他', name: '', pz: false }));
   const chip = i => `<div class="chip ${i.pri ? 'p' : ''} ${Date.now() - (FRESH[i.tag] || 0) < 6000 ? 'fresh' : ''}" onclick="showItem('${esc(i.tag)}')"><b class="mono">${esc(i.part)}</b><span>${esc(i.name)}</span>${stH(i.status)}</div>`;
-  const unplaced = items.filter(i => !i.loc);
+  const carts = Object.values(ST.carts);
+  const onCart = c => items.filter(i => i.cart === c.code);
+  const cbox = c => `<div class="cbox ${c.pz ? 'pz' : ''} ${Date.now() - (FRESH['cart:' + c.code] || 0) < 6000 ? 'fresh' : ''}"><div class="cb-h"><span class="cb-k">台車</span><b class="mono">${esc(c.code)}</b>${c.pz ? '<span class="pri">優先台車</span>' : ''}<span class="cb-n">${onCart(c).length}点</span></div>${onCart(c).map(chip).join('') || '<div class="lb-e">空</div>'}</div>`;
+  const locs = Object.values(MAST.locs);
+  const used = new Set([...carts.map(c => c.loc), ...items.filter(i => !i.cart).map(i => i.direct)].filter(Boolean));
+  [...used].filter(c => !MAST.locs[c]).forEach(c => locs.push({ code: c, type: 'その他', name: '', pz: false }));
+  const groups = [...new Set([...Object.values(LOC_KIND), ...locs.map(l => l.type)])].filter(g => g !== 'その他').concat('その他');
+  const lbox = l => { const cs = carts.filter(c => c.loc === l.code), ds = items.filter(i => !i.cart && i.direct === l.code);
+    return `<div class="lbox ${l.pz ? 'pz' : ''}"><div class="lb-h"><b class="mono">${esc(l.code)}</b><span>${esc(l.name)}</span>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</div>${cs.map(cbox).join('')}${ds.map(chip).join('')}${cs.length || ds.length ? '' : '<div class="lb-e">台車なし</div>'}</div>`; };
+  const loose = carts.filter(c => !c.loc);
+  const unplaced = items.filter(i => !placed(i));
   const pris = items.filter(i => i.pri && i.status !== '検査済');
   return `<div class="kpis">${STATUSES.map(s => `<div class="kpi k-${s}"><div>${s}</div><b>${cnt[s]}</b></div>`).join('')}</div>
-  <div class="dgrid"><section class="card"><div class="ch"><h2>置き場マップ</h2><span class="mute small">光っているのは、いま届いた変更</span></div>
-    ${[...groups, 'その他'].map(g => { const ls = locs.filter(l => l.type === g); if (!ls.length) return ''; return `<div class="lgroup"><div class="lg-t">${g}</div><div class="lgrid">${ls.map(l => `<div class="lbox ${l.pz ? 'pz' : ''}"><div class="lb-h"><b class="mono">${esc(l.code)}</b><span>${esc(l.name)}</span>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</div>${(byLoc[l.code] || []).map(chip).join('') || '<div class="lb-e">なし</div>'}</div>`).join('')}</div></div>`; }).join('')}
-    ${unplaced.length ? `<div class="lgroup"><div class="lg-t">まだ置き場所の記録がない(未受入)</div><div class="unpl">${unplaced.map(chip).join('')}</div></div>` : ''}
+  <div class="dgrid"><section class="card"><div class="ch"><h2>置き場マップ</h2><span class="mute small">置き場所 ＞ 台車 ＞ 部品 ・ 光っているのは、いま届いた変更</span></div>
+    ${groups.map(g => { const ls = locs.filter(l => l.type === g); if (!ls.length) return ''; return `<div class="lgroup"><div class="lg-t">${esc(g)}</div><div class="lgrid">${ls.map(lbox).join('')}</div></div>`; }).join('')}
+    ${loose.length ? `<div class="lgroup"><div class="lg-t">置き場所がまだ記録されていない台車</div><div class="lgrid">${loose.map(cbox).join('')}</div></div>` : ''}
+    ${unplaced.length ? `<div class="lgroup"><div class="lg-t">まだ台車に載せていない(未受入)</div><div class="unpl">${unplaced.map(chip).join('')}</div></div>` : ''}
   </section>
   <div class="dside">
     <section class="card"><div class="ch"><h2>通信モニター</h2><span class="mute small">新しい順</span></div><div class="feed">${FEED.slice(0, 16).map(feedRow).join('') || '<div class="mute small">まだ受信していません</div>'}</div></section>
     <section class="card"><div class="ch"><h2>優先品の所在</h2><span class="mute small">${pris.length} 件</span></div>
-      ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${i.loc && !(MAST.locs[i.loc] || {}).pz ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}${i.loc && !(MAST.locs[i.loc] || {}).pz ? '<div class="small" style="color:var(--pri)">優先置き場ではない</div>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}
+      ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${placed(i) && !priOK(i) ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${placed(i) ? esc(whereOf(i)) : '<span class="mute">未記録</span>'}${placed(i) && !priOK(i) ? '<div class="small" style="color:var(--pri)">優先台車・優先置き場ではない</div>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}
     </section>
   </div></div>`;
 }
 function feedRow(f) {
   const e = f.e, d = e.data || {};
   const delay = f.recv && d.t ? Math.max(0, f.recv - d.t) : null;
-  const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> を <b>${esc(e.loc)}</b> に置いた` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
+  const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → 台車 <b>${esc(e.cart || '-')}</b> @ <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ移動` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
     : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : esc(e.type);
   const dir = f.out || e.device === PC_NAME() ? 'out' : 'in';
   return `<div class="fr ${dir} ${d.pri ? 'p' : ''} ${f.recv && Date.now() - f.recv < 5000 ? 'new' : ''}"><span class="fr-t">${hms(e.at)}</span>
@@ -151,7 +163,7 @@ function feedRow(f) {
 function animateFlow(e, out) {
   if (VIEW !== 'dash') return;
   const lanes = out ? ['lane2', 'lane1'] : ['lane1', 'lane2'];
-  const label = e.type === 'place' ? `${e.part} → ${e.loc}` : e.type === 'status' ? `${e.part} ${e.data.to}` : e.type === 'alert' ? `優先アラート ${e.part}` : e.type === 'ack' ? `了解 ${e.part}` : '接続';
+  const label = e.type === 'place' ? `${e.part} → ${e.cart ? e.cart + ' @ ' : ''}${e.loc}` : e.type === 'cart' ? `台車 ${e.cart} → ${e.loc}` : e.type === 'status' ? `${e.part} ${e.data.to}` : e.type === 'alert' ? `優先アラート ${e.part}` : e.type === 'ack' ? `了解 ${e.part}` : '接続';
   const cls = (e.data || {}).pri || e.type === 'alert' ? 'p' : e.type === 'ack' ? 'a' : '';
   lanes.forEach((id, k) => setTimeout(() => {
     const lane = $(id); if (!lane) return;
@@ -166,7 +178,7 @@ function animateFlow(e, out) {
 let ALERT_UI = null;
 function openAlert() {
   const items = Object.values(ST.items);
-  const cand = items.filter(i => !i.pri && i.loc).sort((a, b) => String(b.since).localeCompare(String(a.since)))[0] || items.find(i => !i.pri) || items[0];
+  const cand = items.filter(i => !i.pri && placed(i)).sort((a, b) => String(b.since).localeCompare(String(a.since)))[0] || items.find(i => !i.pri) || items[0];
   if (!cand) return toast('タグがありません。先にデモ用のタグを作ってください', true);
   ALERT_UI = { part: cand.part, at: now(), sent: null };
   renderAlertModal(true);
@@ -178,7 +190,7 @@ function renderAlertModal(open) {
   const parts = [...new Set(Object.values(ST.items).map(i => i.part))].sort();
   const its = Object.values(ST.items).filter(i => i.part === ALERT_UI.part);
   const it = its[0] || {};
-  const where = its.filter(i => i.loc).map(i => `${locName(i.loc)}(${i.by} が ${hms(i.since)} に置いた)`).join(' / ');
+  const where = its.filter(placed).map(i => `${whereOf(i)}(${i.by} が ${hms(i.since)} に載せた)`).join(' / ');
   const sent = ALERT_UI.sent && ST.alerts.find(a => a.id === ALERT_UI.sent);
   d.innerHTML = `<div class="dlg almodal"><div class="al-top"><span>優先アラート 受信</span><span>${hms(ALERT_UI.at)}</span></div>
     <div class="al-body">
@@ -191,7 +203,7 @@ function renderAlertModal(open) {
 }
 async function sendAlert() {
   const its = Object.values(ST.items).filter(i => i.part === ALERT_UI.part);
-  const where = its.filter(i => i.loc).map(i => locName(i.loc)).join('・');
+  const where = its.filter(placed).map(whereOf).join('・');
   const ev = newEvent('alert', { part: ALERT_UI.part, data: { name: (its[0] || {}).name || '', where, msg: '優先に変更' } });
   try { await post(ev); ALERT_UI.sent = ev.id; renderAlertModal(); } catch (e) { }
 }
@@ -201,16 +213,16 @@ function closeAlert() { const d = $('almodal'); if (d) d.remove(); ALERT_UI = nu
 VIEWS.items = () => {
   const items = Object.values(ST.items).sort((a, b) => (b.pri - a.pri) || String(b.since).localeCompare(String(a.since)));
   return `<div class="head"><h1>部品一覧</h1><span class="mute small">${items.length} 件</span></div>
-  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>置き場所</th><th>最終更新</th><th></th></tr></thead><tbody>
+  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>台車</th><th>置き場所</th><th>最終更新</th><th></th></tr></thead><tbody>
   ${items.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td class="mono">${esc(i.tag)}</td><td><b class="mono">${esc(i.part)}</b> ${priH(i)}</td><td>${esc(i.name)}</td><td class="mono">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
-    <td>${stH(i.status)}${i.hold ? `<div class="small mute">${esc(i.hold)}</div>` : ''}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}</td><td class="small">${esc(i.since ? hms(i.since) + ' ' + i.by : '')}</td>
-    <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button>${i.status === '保留' ? ` <button class="btn" onclick="release('${esc(i.tag)}')">保留を解除</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">まだありません</td></tr>'}
+    <td>${stH(i.status)}${i.hold ? `<div class="small mute">${esc(i.hold)}</div>` : ''}</td><td class="mono">${i.cart ? `<b>${esc(i.cart)}</b>${cartOf(i.cart).pz ? ' <span class="pri">優先</span>' : ''}` : '<span class="mute">-</span>'}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}</td><td class="small">${esc(i.since ? hms(i.since) + ' ' + i.by : '')}</td>
+    <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button>${i.status === '保留' ? ` <button class="btn" onclick="release('${esc(i.tag)}')">保留を解除</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">まだありません</td></tr>'}
   </tbody></table></div>`;
 };
 function showItem(tag) {
   const i = ST.items[tag]; if (!i) return;
   dialog(`<h3 style="margin:0 0 6px"><span class="mono">${esc(i.part)}</span> ${priH(i)} ${stH(i.status)}</h3><div class="small mute">タグ ${esc(i.tag)} ・ ${esc(i.name)} ・ ロット ${esc(i.lot)} ・ 数量 ${esc(i.qty)}</div>
-    <div class="hlist">${i.hist.slice().reverse().map(e => `<div><span class="mute">${esc(e.at)}</span> ${e.type === 'place' ? `${esc(locName(e.loc))} に置いた` : e.type === 'alert' ? '優先アラート' : esc(e.data.to)} <span class="mute">(${esc(e.device)})</span></div>`).join('') || '<div class="mute">記録なし</div>'}</div>`, [{ label: '閉じる', cls: 'primary' }]);
+    <div class="hlist">${i.hist.slice().reverse().map(e => `<div><span class="mute">${esc(e.at)}</span> ${e.type === 'place' ? `台車 ${esc(e.cart || '-')} に載せた(${esc(locName(e.loc))})` : e.type === 'cart' ? `台車 ${esc(e.cart)} ごと ${esc(locName(e.loc))} へ移動` : e.type === 'alert' ? '優先アラート' : esc(e.data.to)} <span class="mute">(${esc(e.device)})</span></div>`).join('') || '<div class="mute">記録なし</div>'}</div>`, [{ label: '閉じる', cls: 'primary' }]);
 }
 async function release(tag) { const i = ST.items[tag]; await post(newEvent('status', { tag, part: i.part, lot: i.lot, data: { to: '解除' } })); toast('保留を解除しました'); render(); }
 
@@ -247,20 +259,34 @@ function printSheet(cards) {
   document.body.classList.add('printing'); setTimeout(() => { window.print(); document.body.classList.remove('printing'); w.remove(); }, 100);
 }
 
-/* ---------------- 置き場所 ---------------- */
+/* ---------------- 台車・置き場所 ---------------- */
 VIEWS.locs = () => {
-  const locs = Object.values(MAST.locs);
-  return `<div class="head"><div><h1>置き場所</h1><div class="mute small">場所タグを台車・棚・検査エリアに貼っておくと、現場で読むだけで場所が記録されます。</div></div><button class="btn primary" onclick="printLocs()">場所タグを印刷</button></div>
-  <div class="card sect"><h2>追加する</h2><div class="row"><input type="text" id="l_code" placeholder="コード 例: C-04" style="width:120px">
-    <select id="l_type">${Object.values(LOC_KIND).map(t => `<option>${t}</option>`).join('')}</select><input type="text" id="l_name" placeholder="名称" style="width:180px">
+  const locs = Object.values(MAST.locs), carts = Object.values(ST.carts);
+  return `<div class="head"><div><h1>台車・置き場所</h1><div class="mute small">台車タグを台車に、場所タグを棚・床・検査エリアに貼っておくと、現場で「部品 → 台車 → 置き場所」と読むだけで記録されます。</div></div>
+    <div class="row"><button class="btn primary" onclick="printCarts()">台車タグを印刷</button><button class="btn primary" onclick="printLocs()">場所タグを印刷</button></div></div>
+  <div class="grid2">
+  <section><div class="card sect"><h2>台車を追加</h2><div class="row"><input type="text" id="c_code" placeholder="台車番号 例: C-03" style="width:130px"><input type="text" id="c_name" placeholder="名称" style="width:150px">
+    <label class="row"><input type="checkbox" id="c_pz"> 優先台車</label><button class="btn primary" onclick="addCart()">追加</button></div></div>
+  <div class="card flush"><table class="tbl"><thead><tr><th>台車番号</th><th>名称</th><th>優先</th><th>いまの置き場所</th><th>載っている部品</th></tr></thead><tbody>
+  ${carts.map(c => `<tr><td class="mono"><b>${esc(c.code)}</b></td><td>${esc(c.name)}</td><td>${c.pz ? '<span class="pri">優先台車</span>' : ''}</td><td>${c.loc ? esc(locName(c.loc)) : '<span class="mute">未記録</span>'}</td><td class="num">${Object.values(ST.items).filter(i => i.cart === c.code).length}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">まだありません</td></tr>'}
+  </tbody></table></div></section>
+  <section><div class="card sect"><h2>置き場所を追加</h2><div class="row"><input type="text" id="l_code" placeholder="コード 例: T-03" style="width:120px">
+    <select id="l_type">${Object.values(LOC_KIND).map(t => `<option>${t}</option>`).join('')}</select><input type="text" id="l_name" placeholder="名称" style="width:140px">
     <label class="row"><input type="checkbox" id="l_pz"> 優先置き場</label><button class="btn primary" onclick="addLoc()">追加</button></div></div>
-  <div class="card flush"><table class="tbl"><thead><tr><th>コード</th><th>種別</th><th>名称</th><th>優先置き場</th><th>置かれている部品</th></tr></thead><tbody>
-  ${locs.map(l => `<tr><td class="mono"><b>${esc(l.code)}</b></td><td>${esc(l.type)}</td><td>${esc(l.name)}</td><td>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</td><td class="num">${Object.values(ST.items).filter(i => i.loc === l.code).length}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">まだありません</td></tr>'}
-  </tbody></table></div>`;
+  <div class="card flush"><table class="tbl"><thead><tr><th>コード</th><th>種別</th><th>名称</th><th>優先</th><th>ある台車</th></tr></thead><tbody>
+  ${locs.map(l => `<tr><td class="mono"><b>${esc(l.code)}</b></td><td>${esc(l.type)}</td><td>${esc(l.name)}</td><td>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</td><td class="mono small">${carts.filter(c => c.loc === l.code).map(c => esc(c.code)).join(' ') || '<span class="mute">-</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">まだありません</td></tr>'}
+  </tbody></table></div></section></div>`;
 };
+async function addCart() {
+  const code = $('c_code').value.trim().toUpperCase(); if (!code) return toast('台車番号を入れてください', true);
+  try { await ensureTabs(); await appendRows('carts', [[code, $('c_name').value.trim(), $('c_pz').checked ? '○' : '']]); MAST = await readMasters(); rebuild(); toast('追加しました'); render(); } catch (e) { toast(e.message, true); }
+}
 async function addLoc() {
   const code = $('l_code').value.trim().toUpperCase(); if (!code) return toast('コードを入れてください', true);
-  try { await appendRows('locs', [[code, $('l_type').value, $('l_name').value.trim(), $('l_pz').checked ? '○' : '']]); MAST = await readMasters(); toast('追加しました'); render(); } catch (e) { toast(e.message, true); }
+  try { await appendRows('locs', [[code, $('l_type').value, $('l_name').value.trim(), $('l_pz').checked ? '○' : '']]); MAST = await readMasters(); rebuild(); toast('追加しました'); render(); } catch (e) { toast(e.message, true); }
+}
+function printCarts() {
+  printSheet(Object.values(MAST.carts).map(c => `<div class="ptag cart ${c.pz ? 'p' : ''}"><div data-qr="${esc(cartQR(c))}" class="pq"></div><div class="pt"><div class="pk">台車</div><div class="pn mono">${esc(c.code)}</div><div class="pm">${esc(c.name)}</div>${c.pz ? '<div class="pp">優先台車</div>' : ''}</div></div>`));
 }
 function printLocs() {
   printSheet(Object.values(MAST.locs).map(l => `<div class="ptag loc ${l.pz ? 'p' : ''}"><div data-qr="${esc(locQR(l))}" class="pq"></div><div class="pt"><div class="pk">置き場所 ${esc(l.type)}</div><div class="pn mono">${esc(l.code)}</div><div class="pm">${esc(l.name)}</div>${l.pz ? '<div class="pp">優先置き場</div>' : ''}</div></div>`));
@@ -293,21 +319,23 @@ VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
     <tr><th>クライアントID</th><td class="mono small">${esc(CONF.clientId)}</td></tr>
     <tr><th>通信回数</th><td class="small">この画面を開いてから ${NET.calls} 回(Googleの上限は1分あたり60回/人。スマホとPCは別のアカウントにすると余裕があります)</td></tr>
   </tbody></table></section>
-  <section class="card"><h2>デモ用データ</h2><button class="btn" onclick="seedDemo()">デモ用のタグと置き場所を作る</button></section>`;
+  <section class="card"><h2>デモ用データ</h2><button class="btn" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button></section>`;
 
 /* ---------------- デモ用データ ---------------- */
 async function seedDemo() {
   const T = [['IHF-30112-A', 'タービンブレード 1段', 'L2610-03', 12, 1], ['IHF-30113-A', 'タービンブレード 2段', 'L2610-04', 8, 0], ['IHF-41005-C', '燃料ノズル', 'J2610-21', 4, 0],
     ['IHF-52001-D', 'ベアリング No.3', 'R2610-15', 2, 1], ['IHF-60340-A', 'シールリング', 'J2610-22', 30, 0], ['IHF-70015-B', '点火プラグ', 'J2610-23', 6, 0],
     ['HW-10011-M6', '六角ボルト M6', 'B2610-01', 200, 0], ['HW-10530-S', 'ロックワイヤ', 'B2610-07', 20, 0]];
-  const L = [['T-01', '仮置き', '入荷口 左', ''], ['T-02', '仮置き', '入荷口 右', ''], ['C-01', '台車', '通常台車1', ''], ['C-02', '台車', '通常台車2', ''],
-    ['CP-01', '台車', '優先台車1', '○'], ['K-N', '検査エリア', '通常品置き場', ''], ['K-P', '検査エリア', '優先品置き場', '○'], ['TP-01', '仮置き', '優先仮置き', '○']];
+  const L = [['T-01', '仮置き', '入荷口 左', ''], ['T-02', '仮置き', '入荷口 右', ''], ['TP-01', '仮置き', '優先仮置き', '○'], ['K-N', '検査エリア', '通常品置き場', ''], ['K-P', '検査エリア', '優先品置き場', '○']];
+  const C = [['C-01', '通常台車1', ''], ['C-02', '通常台車2', ''], ['CP-01', '優先台車1', '○']];
   let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +k.replace(/\D/g, '') || 0));
   try {
+    await ensureTabs();
     await appendRows('tags', T.map(([p, n, l, q, pr]) => [`T${pad(++max, 4)}`, p, n, l, String(q), pr ? '優先' : '', now()]));
-    const have = new Set(Object.keys(MAST.locs));
+    const have = new Set([...Object.keys(MAST.locs), ...Object.keys(MAST.carts || {})]);
     const nl = L.filter(l => !have.has(l[0])); if (nl.length) await appendRows('locs', nl);
-    MAST = await readMasters(); rebuild(); toast('デモ用のタグと置き場所を作りました'); location.hash = '#tags'; render();
+    const nc = C.filter(c => !have.has(c[0])); if (nc.length) await appendRows('carts', nc);
+    MAST = await readMasters(); rebuild(); toast('デモ用のタグ・台車・置き場所を作りました'); location.hash = '#tags'; render();
   } catch (e) { toast(e.message, true); }
 }
 boot();

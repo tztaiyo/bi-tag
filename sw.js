@@ -1,5 +1,5 @@
 // 一度開けば、電波がない場所でもアプリを起動できるようにする(データの送受信は対象外)
-const C = 'bi-tag-v1', FILES = ['index.html', 'admin.html', 'config.js', 'manifest.webmanifest', 'icon-192.png'];
+const C = 'bi-tag-v2', FILES = ['index.html', 'admin.html', 'config.js', 'manifest.webmanifest', 'icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

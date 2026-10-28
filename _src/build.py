@@ -48,7 +48,7 @@ cfg = {"mock": True, "apiBase": "", "userinfoUrl": "/oauth2/v3/userinfo", "clien
     "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}]},
     ensure_ascii=False), encoding="utf-8")
 (OUT / "sw.js").write_text("""// 一度開けば、電波がない場所でもアプリを起動できるようにする(データの送受信は対象外)
-const C = 'bi-tag-v1', FILES = ['index.html', 'admin.html', 'config.js', 'manifest.webmanifest', 'icon-192.png'];
+const C = 'bi-tag-v2', FILES = ['index.html', 'admin.html', 'config.js', 'manifest.webmanifest', 'icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

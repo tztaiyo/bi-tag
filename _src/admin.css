@@ -51,11 +51,16 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 @media(max-width:1100px){.dgrid{grid-template-columns:1fr}.flow{grid-template-columns:1fr;gap:6px}.lane{height:40px}}
 /* 置き場マップ */
 .lgroup{margin-bottom:14px}.lg-t{font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:6px}
-.lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
 .lbox{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fafbfc;min-height:70px;display:grid;gap:5px;align-content:start}
 .lbox.pz{border:2px solid var(--pri);background:#fff8f8}
 .lb-h{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.lb-h span{font-size:12px;color:var(--mute)}
 .lb-e{font-size:12px;color:#b3bac5}
+.cbox{border:1px solid #e3c98f;border-left:4px solid #e0a93a;border-radius:8px;background:#fffdf6;padding:6px;display:grid;gap:4px}
+.cbox.pz{border-color:var(--pri);border-left-color:var(--pri);background:#fff6f6}
+.cbox.fresh{animation:fresh 2.2s ease-out}
+.cb-h{display:flex;gap:6px;align-items:center;font-size:12.5px}.cb-k{font-size:10.5px;font-weight:700;color:#9a6b12;background:#fbecc8;border-radius:4px;padding:0 5px}
+.cbox.pz .cb-k{color:#fff;background:var(--pri)}.cb-n{margin-left:auto;font-size:11px;color:var(--mute)}
 .chip{display:grid;grid-template-columns:auto 1fr auto;gap:6px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer}
 .chip span{color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip.p{border-color:var(--pri);background:var(--pri-soft)}
