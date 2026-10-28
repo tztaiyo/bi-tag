@@ -159,3 +159,8 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .sh-alt{background:#fff;color:#7a1010;border:2px solid #d9a0a0}
 .sh-close{margin-top:14px;text-align:center;font-size:14px;color:#666;position:relative;padding-bottom:6px}
 .sh-close .bar{background:#9db8e8}
+/* 台車・置き場所の解除ボタン(大きく、はっきり) */
+.slot{position:relative}
+.unfix{margin-top:auto;align-self:stretch;min-height:44px;margin-top:8px;border:2px solid #c9d3e3;background:#f4f6fa;color:#1d2b44;border-radius:10px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:4px}
+.unfix:active{background:#e1e7f0}
+.slot.bad .unfix{border-color:#e7a0a0;background:#fff;color:#a01515}

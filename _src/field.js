@@ -74,7 +74,7 @@ function renderShell() {
   <div class="reasons" id="reasons" hidden>${HOLD_REASONS.map(r => `<button data-r="${r}" onclick="setReason('${r}')">${r}</button>`).join('')}</div>
   <section class="pair" id="pair">
     <div class="slot wide" id="slotP"></div>
-    <div class="pair2" id="pair2"><div class="slot cart" id="slotC" onclick="clearCart()"></div><div class="arrow" id="arrow">→</div><div class="slot loc" id="slotL" onclick="clearLoc()"></div></div>
+    <div class="pair2" id="pair2"><div class="slot cart" id="slotC"></div><div class="arrow" id="arrow">→</div><div class="slot loc" id="slotL"></div></div>
   </section>
   <div class="act" id="act" hidden></div>
   <div class="msg" id="msg"></div>
@@ -107,6 +107,7 @@ if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pic
 const spell = c => String(c || '').replace(/[-_]/g, ' ').replace(/(\d)/g, ' $1 ').replace(/\s+/g, ' ').trim();   // C-01 → 「C 0 1」と1文字ずつ読む
 function say(t) {
   if (!F.voice || !window.speechSynthesis) return;
+  t = t.replace(/二重/g, 'にじゅう');   // 「ふたえ」と読まれないように
   try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'ja-JP'; if (VOICE) u.voice = VOICE; u.rate = 1.0; u.pitch = 1.15; speechSynthesis.speak(u); } catch (e) { }
 }
 
@@ -176,10 +177,10 @@ function renderPair() {
   $('slotP').innerHTML = P ? `${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}${plan ? ` <span class="sl-plan">計画: ${esc(plan.carts.join('・') || '台車指定なし')} @ ${esc(plan.locs.join('・') || '場所指定なし')}</span>` : ''}</div>`
     : `<div class="sl-k">${put ? '① ' : ''}部品</div><div class="sl-e">部品タグ</div>`;
   $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (put && want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
-  $('slotC').innerHTML = C ? `<div class="sl-k">② 台車 <span class="pin">解除 ×</span></div><div class="sl-v mono">${esc(C.code)}</div><div class="sl-s">${esc(C.name || '')} ・ ${onCartCount(C.code)}点</div>${C.pz ? '<span class="pri">優先台車</span>' : ''}${planLine('台車')}`
+  $('slotC').innerHTML = C ? `<div class="sl-k">② 台車</div><div class="sl-v mono">${esc(C.code)}</div><div class="sl-s">${esc(C.name || '')} ・ ${onCartCount(C.code)}点</div>${C.pz ? '<span class="pri">優先台車</span>' : ''}${planLine('台車')}<button class="unfix" onclick="clearCart()">✕ 台車を解除</button>`
     : `<div class="sl-k">② 台車</div><div class="sl-e">台車タグ</div>`;
   $('slotL').className = 'slot loc' + (L ? ' set' : '') + (L && L.pz ? ' pz' : '') + (put && want === 'L' ? ' want' : '') + (bad('置き場所') ? ' bad' : '');
-  $('slotL').innerHTML = L ? `<div class="sl-k">③ 置き場所 <span class="pin">解除 ×</span></div><div class="sl-v mono">${esc(L.code)}</div><div class="sl-s">${esc(L.type)} ${esc(L.name || '')}</div>${L.pz ? '<span class="pri">優先置き場</span>' : ''}${planLine('置き場所')}`
+  $('slotL').innerHTML = L ? `<div class="sl-k">③ 置き場所</div><div class="sl-v mono">${esc(L.code)}</div><div class="sl-s">${esc(L.type)} ${esc(L.name || '')}</div>${L.pz ? '<span class="pri">優先置き場</span>' : ''}${planLine('置き場所')}<button class="unfix" onclick="clearLoc()">✕ 置き場所を解除</button>`
     : `<div class="sl-k">③ 置き場所</div><div class="sl-e">場所タグ</div>`;
   renderAct(); hint();
 }
@@ -290,17 +291,29 @@ function planError(r) {   // 計画と違う: 登録せずにエラー。管理�
     const P = r.kind === 'place' ? F.part : {};
     send(newEvent('ng', { tag: P.tag || '', part: P.part || '', lot: P.lot || '', cart: F.cart.code, loc: F.loc.code, data: { kind: r.kind, reasons: ngText(r.ng), cart: F.cart.code } }));
   }
-  renderPair();
   const bc = r.ng.find(x => x.k === '台車'), bl = r.ng.find(x => x.k === '置き場所');
   const what = bc && bl ? '台車と置き場所' : bc ? '台車' : '置き場所';
+  // エラーのもとになった台車・置き場所の固定を解除する(部品は残す)。正しいタグを読めばそのまま続けられる
+  BADSET = { cart: F.cart, loc: F.loc, kind: r.kind };
+  if (bc) F.cart = null;
+  if (bl) F.loc = null;
+  F.moveCand = false; LAST_NG = '';
+  renderPair();
+  const freed = [bc && `台車 ${esc(bc.got)}`, bl && `置き場所 ${esc(bl.got)}`].filter(Boolean).join(' と ');
   const rows = [];
   if (bc) rows.push(['正しい台車', '○ ' + esc(bc.want.join('・')), 'ok'], ['読んだ台車', '✕ ' + esc(bc.got), 'bad']);
   if (bl) rows.push(['正しい置き場所', '○ ' + esc(bl.want.join('・')), 'ok'], ['読んだ置き場所', '✕ ' + esc(bl.got), 'bad']);
   sheet('ng', '✕', r.kind === 'cart' ? 'この台車は、ここに置けません' : `${what}がちがいます`, rows,
-    `<b>登録していません。</b>正しい${what}のタグを読んでください${r.kind === 'place' ? `<div class="sh-sub">部品: <b class="mono">${esc(F.part.part)}</b> ${esc(partName(F.part))}${isPriPart(F.part) ? ' <span class="pri">優先品</span>' : ''}</div>` : ''}`,
-    `<div class="sh-btns"><button class="btn sh-alt" onclick="closeSheet();register(true)">計画外として登録する</button></div>`);
-  say(`エラーです。${what}がちがいます。` + (bc ? `台車は ${spell(bc.want[0])}。` : '') + (bl ? `置き場所は ${spell(bl.want[0])} です。` : ''));
-  msg(`✕ <b>エラー: ${what}がちがいます</b>(登録していません)`, 'ng');
+    `<b>登録していません。</b>まちがえた${freed}の固定を<b>解除しました</b>。正しい${what}のタグを読んでください${r.kind === 'place' ? `<div class="sh-sub">部品: <b class="mono">${esc(F.part.part)}</b> ${esc(partName(F.part))}${isPriPart(F.part) ? ' <span class="pri">優先品</span>' : ''}</div>` : ''}`,
+    `<div class="sh-btns"><button class="btn sh-alt" onclick="closeSheet();forceOff()">計画外として、このまま登録する</button></div>`);
+  say(`エラーです。${what}がちがいます。固定を解除しました。` + (bc ? `台車は ${spell(bc.want[0])}。` : '') + (bl ? `置き場所は ${spell(bl.want[0])} です。` : ''));
+  msg(`✕ <b>エラー: ${what}がちがいます</b>(登録していません)。${freed}の固定を解除しました`, 'ng');
+}
+let BADSET = null;
+function forceOff() {   // 計画外として登録: 解除した台車・置き場所を戻してから登録する
+  if (!BADSET) return;
+  F.cart = BADSET.cart; F.loc = BADSET.loc; if (BADSET.kind === 'cart') F.moveCand = true;
+  BADSET = null; register(true, true);
 }
 // 同じ部品を、同じ台車・置き場所にもう一度読んだ: 送らない
 function dupStop(prev) {
