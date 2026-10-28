@@ -98,3 +98,4 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
   .pk{font-size:7pt;color:#555}.pn{font-size:12pt;font-weight:700;word-break:break-all}.pm{font-size:8pt}.pl{font-size:7.5pt;color:#333}
   .pp{display:inline-block;background:#d21f1f;color:#fff;font-size:8pt;font-weight:700;padding:0 2mm;border-radius:1mm;margin-top:1mm}
 }
+.chip.ng{border:2px dashed var(--pri);background:#fff0f0}

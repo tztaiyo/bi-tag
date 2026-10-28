@@ -40,7 +40,7 @@ body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding
 .sl-v{font-size:18px;font-weight:700;line-height:1.2;word-break:break-all}
 .sl-s{font-size:12px;color:var(--ink2)}
 .sl-e{flex:1;display:flex;align-items:center;justify-content:center;color:#6f82a6;font-size:13px}
-.pin{float:right;font-weight:400;color:var(--accent)}
+.pin{float:right;font-weight:400;color:var(--accent);font-size:11px;border:1px solid #b9cdf0;border-radius:999px;padding:0 6px}
 .arrow{display:flex;align-items:center;justify-content:center;color:#7f93b8;font-size:22px;font-weight:700}
 .pair.linked .arrow{color:#3ad07c;animation:pop .5s}
 .pair.linked .slot{animation:glow .7s}
@@ -64,3 +64,21 @@ body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding
 .al-b{font-size:16px;line-height:1.6}
 .alertbar .btn{background:#fff;color:var(--pri);border:0}
 @keyframes drop{from{transform:translateY(-100%)}to{transform:none}}
+/* 登録の自動・手動 */
+.regsw{margin-left:auto;margin-right:8px;border:1px solid #3a4d73;background:#17243d;color:#c9d4e6;border-radius:999px;padding:4px 10px;font-size:12px;white-space:nowrap}
+.regsw b{color:#fff}.regsw.man{background:#ffd27f;border-color:#ffd27f;color:#5a3a00}.regsw.man b{color:#3a2500}
+.act{display:grid;grid-template-columns:1fr auto;gap:6px;padding:2px max(12px,env(safe-area-inset-left,0px)) 4px}
+.regbtn{background:#22a35a;border:0;color:#fff;border-radius:12px;padding:10px 14px;font-size:17px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:1px;animation:pulse 1.6s infinite}
+.regbtn small{font-size:12px;font-weight:400;opacity:.9}
+.regbtn.ngb{background:#8a5a12}
+.act .cancel{background:#17243d;color:#c9d4e6;border-color:#3a4d73;border-radius:12px}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,163,90,.6)}50%{box-shadow:0 0 0 6px rgba(34,163,90,0)}}
+/* 計画と違う */
+.slot.bad{border:2px solid #ff4d4d!important;background:#ffecec!important}
+.sl-ng{font-size:11.5px;font-weight:700;color:#c41a1a;margin-top:2px}
+.sl-plan{display:inline-block;font-size:11px;color:#1d5fc4}
+.msg.warn{background:#4a3410;color:#ffe2ad}
+.msg.ng{background:#5a1717;color:#ffe0e0}
+.ngact{margin-top:8px}.ngact .btn{background:transparent;color:#ffd0d0;border-color:#ff9a9a;font-size:13px;padding:6px 12px}
+.rc.n{background:linear-gradient(90deg,#fff1e0,transparent)}.ngt{color:#b42318;font-weight:700}
+.fb-s{flex-wrap:wrap;justify-content:flex-end}

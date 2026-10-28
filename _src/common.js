@@ -158,6 +158,7 @@ const TABS = {
   tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時'] },
   locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
   carts: { title: '台車', cols: ['台車番号', '名称', '優先台車'] },
+  plans: { title: '計画', cols: ['品番', '台車', '置き場所', 'メモ'] },
 };
 const colLetter = n => String.fromCharCode(65 + n - 1);
 const rng = (tab, from = 2, to = '') => `'${TABS[tab].title}'!A${from}:${colLetter(TABS[tab].cols.length)}${to}`;
@@ -181,14 +182,16 @@ async function readRows(tab, from = 2) {
   return (r.values || []);
 }
 async function readMasters(retry = true) {
-  const qs = ['tags', 'locs', 'carts'].map(t => 'ranges=' + encodeURIComponent(rng(t))).join('&');
+  const qs = ['tags', 'locs', 'carts', 'plans'].map(t => 'ranges=' + encodeURIComponent(rng(t))).join('&');
   let r;
   try { r = await gapi(`/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`); }
   catch (e) {   // 以前の版で作ったスプレッドシートには「台車」の表がないので、作ってから読み直す
     if (!retry || e instanceof NeedLogin || e instanceof NoAccess) throw e;
     await ensureTabs(); NET.online = true; return readMasters(false);
   }
-  const [tv, lv, cv] = (r.valueRanges || []).map(v => v.values || []);
+  const [tv, lv, cv, pv] = (r.valueRanges || []).map(v => v.values || []);
+  const plans = {};   // 品番ごと。同じ品番が何行かあれば、下の行(あとで入れたもの)を使う
+  (pv || []).filter(r => r[0]).forEach(r => { plans[r[0]] = { part: r[0], carts: splitList(r[1]), locs: splitList(r[2]), memo: r[3] || '' }; });
   const locs = {}, carts = {};
   (lv || []).filter(r => r[0]).forEach(r => {
     // 以前の版で「置き場所(種別=台車)」として登録したものは、台車として扱う
@@ -198,9 +201,26 @@ async function readMasters(retry = true) {
   (cv || []).filter(r => r[0]).forEach(r => { carts[r[0]] = { code: r[0], name: r[1] || '', pz: r[2] === '○' }; });
   return {
     tags: Object.fromEntries((tv || []).filter(r => r[0]).map(r => [r[0], { tag: r[0], part: r[1] || '', name: r[2] || '', lot: r[3] || '', qty: r[4] || '', pri: r[5] === '優先', issued: r[6] || '' }])),
-    locs, carts,
+    locs, carts, plans,
   };
 }
+
+/* ---------------- 計画(どの品番を、どの台車・置き場所に置くか) ----------------
+   台車・置き場所は「T-01/K-N」のように複数書ける。空欄はどこでもよい */
+const splitList = v => String(v || '').split(/[\/・,、\s]+/).filter(Boolean);
+function planNG(m, part, cart, loc) {
+  const p = ((m && m.plans) || {})[part]; if (!p) return [];
+  const r = [];
+  if (cart && p.carts.length && !p.carts.includes(cart)) r.push({ k: '台車', want: p.carts, got: cart });
+  if (loc && p.locs.length && !p.locs.includes(loc)) r.push({ k: '置き場所', want: p.locs, got: loc });
+  return r;
+}
+function cartPlanLocs(m, cart) {   // その台車に載せる計画の部品の置き場所 = 台車を置いてよい場所
+  const s = new Set(); Object.values((m && m.plans) || {}).forEach(p => { if (p.carts.includes(cart)) p.locs.forEach(l => s.add(l)); });
+  return [...s];
+}
+function cartMoveNG(m, cart, loc) { const ls = cartPlanLocs(m, cart); return ls.length && !ls.includes(loc) ? [{ k: '置き場所', want: ls, got: loc }] : []; }
+const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は ${x.want.join('・')}`);
 
 /* ---------------- タグの形式(QRの中身) ----------------
    部品タグ: BI-T;ID=T0001;PN=IHF-30112-A;LOT=L2610-03;Q=12;P=1   (P=1 なら発行時点で優先)
@@ -237,7 +257,7 @@ function newEvent(type, f = {}) {
 }
 function buildState(masters, events) {
   const items = {}, carts = {};
-  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [] });
+  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '' });
   const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
   for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
   for (const c of Object.keys(masters.carts || {})) cart(c);
@@ -252,7 +272,7 @@ function buildState(masters, events) {
       const cc = e.cart || ((masters.carts || {})[e.loc] ? e.loc : '');
       if (cc) { it.cart = cc; it.direct = ''; if (e.cart) Object.assign(cart(cc), { loc: e.loc, since: e.at, by: e.device }); }
       else { it.cart = ''; it.direct = e.loc; }
-      it.since = e.at; it.by = e.device;
+      it.since = e.at; it.by = e.device; it.offPlan = e.data.offPlan || '';
       if (e.data.pri && !it.pri) { it.pri = true; it.priSrc = 'タグ'; }
       it.hist.push(e);
     } else if (e.type === 'cart') {
@@ -265,6 +285,8 @@ function buildState(masters, events) {
       else it.status = to;
       if (it.status === '未受入') it.status = '未検査';
       it.hist.push(e);
+    } else if (e.type === 'ng') {   // 計画と違う置き方を現場が検知(登録はしていない)
+      if (e.tag) item(e.tag, e).hist.push(e);
     } else if (e.type === 'alert') {
       alerts.push({ ...e, acks: [] });
       for (const it of Object.values(items)) if (it.part === e.part || it.tag === e.tag) { it.pri = true; it.priSrc = 'アラート'; it.hist.push(e); }
