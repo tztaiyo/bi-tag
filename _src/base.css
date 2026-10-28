@@ -44,4 +44,4 @@ body.login-page{background:linear-gradient(160deg,#12264a 0%,#1d3d72 100%)}
 .lbrand{font-size:21px;font-weight:700}.lsub{color:var(--mute);font-size:12px;letter-spacing:.12em;margin-top:-10px}
 .lcard p{margin:0;color:var(--ink2)}
 .fl{display:grid;gap:4px;font-size:12px;color:var(--ink2);font-weight:700}
-.loginmsg{color:#a21b1b;font-size:13px;min-height:1em}
+.loginmsg{color:#a21b1b;font-size:13px;min-height:1em;white-space:pre-wrap}
