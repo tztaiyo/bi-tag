@@ -2492,11 +2492,11 @@ let AUDIO = null;
 function beep(kind = 'ok') {   // ok: 短い高音 / pri: 2回 / ng: 低音
   try {
     AUDIO = AUDIO || new AudioContext();
-    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : [[220, .3]];
+    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : kind === 'dup' ? [[660, .08], [0, .04], [440, .12]] : [[220, .3]];
     let t = AUDIO.currentTime;
     for (const [f, d] of tones) { if (f) { const o = AUDIO.createOscillator(), g = AUDIO.createGain(); o.frequency.value = f; g.gain.value = .18; o.connect(g); g.connect(AUDIO.destination); o.start(t); o.stop(t + d); } t += d; }
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : 40); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : kind === 'dup' ? [60, 50, 60] : 40); } catch (e) { }
 }
 
 /* ---------------- 設定(スプレッドシートとログイン用ID) ----------------
@@ -2920,7 +2920,7 @@ function dashLive() {
 function feedRow(f) {
   const e = f.e, d = e.data || {};
   const delay = f.recv && d.t ? Math.max(0, f.recv - d.t) : null;
-  const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → 台車 <b>${esc(e.cart || '-')}</b> @ <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ移動` : e.type === 'ng' ? `<b style="color:var(--pri)">計画外を検知(未登録)</b> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}<div class="small" style="color:var(--pri)">${(d.reasons || []).map(esc).join(' / ')}</div>` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
+  const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → 台車 <b>${esc(e.cart || '-')}</b> @ <b>${esc(e.loc)}</b>${d.from ? `<div class="small mute">移し替え(${esc(d.from)} から)</div>` : ''}` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ移動` : e.type === 'ng' ? `<b style="color:var(--pri)">計画外を検知(未登録)</b> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}<div class="small" style="color:var(--pri)">${(d.reasons || []).map(esc).join(' / ')}</div>` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
     : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : esc(e.type);
   const dir = f.out || e.device === PC_NAME() ? 'out' : 'in';
   return `<div class="fr ${dir} ${d.pri ? 'p' : ''} ${f.recv && Date.now() - f.recv < 5000 ? 'new' : ''}"><span class="fr-t">${hms(e.at)}</span>

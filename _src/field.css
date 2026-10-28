@@ -82,3 +82,10 @@ body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding
 .ngact{margin-top:8px}.ngact .btn{background:transparent;color:#ffd0d0;border-color:#ff9a9a;font-size:13px;padding:6px 12px}
 .rc.n{background:linear-gradient(90deg,#fff1e0,transparent)}.ngt{color:#b42318;font-weight:700}
 .fb-s{flex-wrap:wrap;justify-content:flex-end}
+.flash.dup{background:rgba(60,140,255,.5)}
+.msg.dup{background:#16345f;color:#dbe8ff}
+.dupt{color:#1d5fc4;font-weight:700}.rc .skip{grid-column:2;font-size:11.5px;color:#1d5fc4}
+.sl-reg{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#1d5fc4;border-radius:4px;padding:0 5px}
+.regbtn.dupb{background:#3b4a63;animation:none}.regbtn.mvb{background:#1d5fc4}
+.msg.dup .ngact .btn.mv{background:#fff;color:#16345f;border-color:#fff;font-weight:700}
+.msg.dup .ngact .btn{color:#dbe8ff;border-color:#8fb6ff}
