@@ -1,5 +1,5 @@
 /* 現場アプリ(スマホ): 片手で持って、タグをかざしていく画面 */
-body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding-bottom:env(safe-area-inset-bottom,0px)}
+body.field{background:#0f1a2c;color:#fff;font-size:17px;min-height:100vh;padding-bottom:env(safe-area-inset-bottom,0px)}
 .fb{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 8px max(14px,env(safe-area-inset-left,0px));background:#0b1424}
 .fb-t{font-weight:700;font-size:16px}.fb-s{font-size:12px;color:#c3cede;display:flex;align-items:center;gap:4px}
 .fb-s .btn{padding:3px 8px;font-size:12px}
@@ -112,3 +112,50 @@ body.field{background:#0f1a2c;color:#fff;font-size:15px;min-height:100vh;padding
 .msg.dup{background:#1d4f9c;color:#e6efff;border:2px solid #8fb6ff}
 .sl-band{margin:-9px -10px 6px;padding:4px 10px;background:#1d5fc4;color:#fff;font-size:12px;font-weight:700;border-radius:9px 9px 0 0}
 .cd-reg{font-size:11px;font-weight:700;color:#fff;background:#1d5fc4;border-radius:4px;padding:1px 6px}
+
+/* ===== 読みやすさ(ユニバーサルデザイン) =====
+   文字は大きく・色だけに頼らず記号(○ ✕ ✓ !)と言葉でも区別・押す場所は大きく */
+.fb-t{font-size:18px}.fb-s{font-size:13px}
+.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px max(10px,env(safe-area-inset-left,0px)) 0;background:#0b1424;padding-bottom:8px}
+.opts button{min-height:44px;border:2px solid #3a4d73;background:#17243d;color:#dfe7f3;border-radius:10px;font-size:14px}
+.opts button b{color:#fff;font-size:15px}.opts button.on{background:#ffd27f;border-color:#ffd27f;color:#3a2500}.opts button.on b{color:#3a2500}
+#voicesw.on,#sizesw.on{background:#fff;border-color:#fff;color:var(--navy)}#voicesw.on b,#sizesw.on b{color:var(--navy)}
+.camhint{font-size:16px;font-weight:700;padding:10px 12px}
+.modes button{font-size:18px;min-height:52px}
+.reasons button{font-size:16px;min-height:44px}
+.slot{min-height:100px;padding:10px 12px}.slot.wide{min-height:76px}
+.sl-k{font-size:14px;color:#a9b8d3}.sl-v{font-size:24px}.sl-s{font-size:14px}.sl-e{font-size:16px;color:#8b9cbc}
+.sl-ng{font-size:15px}.sl-plan{font-size:13px}.sl-band{font-size:14px}
+.pin{font-size:13px;padding:2px 9px}
+.msg{font-size:17px;line-height:1.55;min-height:50px;padding:12px 14px}
+.regbtn{font-size:21px;min-height:64px}.regbtn small{font-size:14px}
+.hist-h{font-size:15px}.hist-h span{font-size:13px}
+.rc{font-size:15.5px;grid-template-columns:72px 1fr}.rc .sent,.rc .sending,.rc .queued,.rc .skip{font-size:13.5px}
+.manual input,.manual .btn{min-height:46px;font-size:16px}
+.cd-k{font-size:14px}.cd-v{font-size:26px}.cd-s{font-size:14px}.cd-tap{font-size:18px;padding:14px 16px}.cd-reg{font-size:13px}
+.al-b{font-size:19px}.al-h{font-size:15px}
+/* 文字「特大」 */
+body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,body.field.xl .modes,body.field.xl .candwrap,body.field.xl .sheet{zoom:1.18}
+/* 大きなお知らせ画面 */
+.sheet-back{position:fixed;left:0;right:0;bottom:0;top:34vh;z-index:60;display:flex;align-items:flex-end}
+.sheet{width:100%;max-height:66vh;overflow:auto;background:#fff;color:#111;border-radius:22px 22px 0 0;padding:18px max(18px,env(safe-area-inset-left,0px)) calc(16px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.5);animation:sheetin .22s ease-out;position:relative;border-top:10px solid #1d5fc4}
+.sheet-back.ng .sheet{border-top-color:#c41a1a}.sheet-back.pri .sheet{border-top-color:#d21f1f}.sheet-back.dup .sheet{border-top-color:#1d5fc4}
+@keyframes sheetin{from{transform:translateY(40%)}}
+.sh-top{display:flex;align-items:center;gap:14px}
+.sh-ic{flex:none;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;color:#fff;background:#1d5fc4}
+.ng .sh-ic{background:#c41a1a}.pri .sh-ic{background:#d21f1f}
+.sh-t{font-size:27px;font-weight:800;line-height:1.25}
+.ng .sh-t{color:#b01212}
+.sh-rows{margin-top:14px;display:grid;gap:8px}
+.sh-r{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#f2f4f7;border-radius:12px;padding:10px 14px}
+.sh-l{font-size:17px;color:#333;font-weight:700}
+.sh-v{font-size:26px;font-weight:800;font-family:var(--mono);text-align:right}
+.sh-v.ok{color:#0f6b2f}.sh-v.bad{color:#b01212;text-decoration:line-through;text-decoration-thickness:3px}
+.sh-n{margin-top:14px;font-size:19px;line-height:1.55}
+.sh-sub{font-size:16px;color:#444;margin-top:4px}
+.sh-btns{margin-top:14px;display:grid;gap:8px}
+.sh-btns .btn{min-height:56px;font-size:19px;border-radius:14px;font-weight:700}
+.sh-main{background:#1d5fc4;color:#fff;border:0}
+.sh-alt{background:#fff;color:#7a1010;border:2px solid #d9a0a0}
+.sh-close{margin-top:14px;text-align:center;font-size:14px;color:#666;position:relative;padding-bottom:6px}
+.sh-close .bar{background:#9db8e8}

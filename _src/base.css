@@ -11,10 +11,10 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
-body{font-family:var(--f);color:var(--ink);background:var(--bg);font-size:14px;line-height:1.55;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--f);color:var(--ink);background:var(--bg);font-size:16px;line-height:1.6;-webkit-tap-highlight-color:transparent}
 a{color:var(--accent);text-decoration:none}
 button{font:inherit}
-.mono{font-family:var(--mono)} .num{font-variant-numeric:tabular-nums} .mute{color:var(--mute)} .small{font-size:12px}
+.mono{font-family:var(--mono)} .num{font-variant-numeric:tabular-nums} .mute{color:var(--mute)} .small{font-size:13.5px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap} .row.end{justify-content:flex-end;margin-top:14px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #c7cdd6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink);white-space:nowrap}
 .btn:hover{background:#f4f6f9}

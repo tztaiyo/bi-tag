@@ -99,3 +99,7 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
   .pp{display:inline-block;background:#d21f1f;color:#fff;font-size:8pt;font-weight:700;padding:0 2mm;border-radius:1mm;margin-top:1mm}
 }
 .chip.ng{border:2px dashed var(--pri);background:#fff0f0}
+/* 読みやすさ: PCも文字を大きめに */
+.chip{font-size:14px}.lg-t{font-size:14px}.lb-h span{font-size:13.5px}.cb-h{font-size:14px}
+.fr{font-size:15px}.tbl{font-size:15px}.kpi div{font-size:15px}
+.toast{font-size:16px}

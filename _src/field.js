@@ -6,7 +6,7 @@
    - タグの読み取りはこの端末の中で行い、結果だけをスプレッドシートに送る
    ===================================================================== */
 const MODES = ['置く', '検査済', '保留'];
-const F = { mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', reason: HOLD_REASONS[0], started: false };
+const F = { mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
 let MAST = { tags: {}, locs: {}, carts: {} };
 let OUTBOX = [];            // 送信待ちのイベント
 let RECENT = [];            // 画面に出す最近の操作 { ev, state: sending|sent|queued, ms }
@@ -60,7 +60,8 @@ let MAST_OK = 0;
 /* ---------------- 画面 ---------------- */
 function renderShell() {
   $('app').innerHTML = `
-  <header class="fb"><div class="fb-t">現場スキャン</div><button class="regsw" id="regsw" onclick="toggleReg()"></button><div class="fb-s" id="net"></div></header>
+  <header class="fb"><div class="fb-t">現場スキャン</div><div class="fb-s" id="net"></div></header>
+  <div class="opts"><button id="regsw" onclick="toggleReg()"></button><button id="voicesw" onclick="toggleVoice()"></button><button id="sizesw" onclick="toggleSize()"></button></div>
   <div class="alertbar" id="alertbar" hidden></div>
   <section class="cam" id="cam">
     <video id="video" playsinline muted></video><canvas id="cv" hidden></canvas>
@@ -78,12 +79,52 @@ function renderShell() {
   <div class="act" id="act" hidden></div>
   <div class="msg" id="msg"></div>
   <section class="hist"><div class="hist-h"><b>この端末の操作</b><span id="sendinfo"></span></div><div id="recent"></div></section>
+  <div class="sheet-back" id="sheet" hidden></div>
   <div class="manual"><input type="text" id="manual" placeholder="手入力(タグの文字)"><button class="btn" onclick="manualIn()">読む</button><button class="btn" onclick="photoScan()">写真で読む</button></div>`;
   $('manual').addEventListener('keydown', e => { if (e.key === 'Enter') manualIn(); });
   setMode(F.mode); renderReg(); renderPair(); renderRecent(); renderNet();
 }
 /* 登録のしかた: 自動 = 3つそろった瞬間に登録 / 手動 = そろったら「登録する」ボタンで登録 */
-function renderReg() { const b = $('regsw'); if (b) { b.className = 'regsw ' + (F.auto ? 'auto' : 'man'); b.innerHTML = `登録 <b>${F.auto ? '自動' : '手動'}</b>`; } }
+function renderReg() {
+  const set = (id, on, html) => { const b = $(id); if (b) { b.className = on ? 'on' : ''; b.innerHTML = html; } };
+  set('regsw', !F.auto, `登録 <b>${F.auto ? '自動' : '手動'}</b>`);
+  set('voicesw', F.voice, `${F.voice ? '🔊' : '🔈'} 音声 <b>${F.voice ? 'あり' : 'なし'}</b>`);
+  set('sizesw', F.big, `文字 <b>${F.big ? '特大' : '大'}</b>`);
+  document.body.classList.toggle('xl', F.big);
+}
+function toggleVoice() { F.voice = !F.voice; lsSet('bi_voice', F.voice ? '1' : '0'); renderReg(); if (F.voice) say('音声でお知らせします'); else if (window.speechSynthesis) speechSynthesis.cancel(); }
+function toggleSize() { F.big = !F.big; lsSet('bi_big', F.big ? '1' : '0'); renderReg(); }
+
+/* ---------------- 音声(女性の声を優先) ---------------- */
+let VOICE = null;
+function pickVoice() {
+  if (!window.speechSynthesis) return;
+  const vs = speechSynthesis.getVoices().filter(v => /^ja/i.test(v.lang));
+  const male = /Otoya|Ichiro|Keita|Hattori|Daichi|Male|男性/i, fem = /Kyoko|O-ren|Nanami|Haruka|Ayumi|Sayaka|Mizuki|Female|女性|Google/i;
+  VOICE = vs.find(v => fem.test(v.name) && !male.test(v.name)) || vs.find(v => !male.test(v.name)) || vs[0] || null;
+}
+if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+const spell = c => String(c || '').replace(/[-_]/g, ' ').replace(/(\d)/g, ' $1 ').replace(/\s+/g, ' ').trim();   // C-01 → 「C 0 1」と1文字ずつ読む
+function say(t) {
+  if (!F.voice || !window.speechSynthesis) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'ja-JP'; if (VOICE) u.voice = VOICE; u.rate = 1.0; u.pitch = 1.15; speechSynthesis.speak(u); } catch (e) { }
+}
+
+/* ---------------- 大きなお知らせ画面(エラー・登録済み・優先など) ----------------
+   画面の下半分に大きな文字で出す。タッチするか、次のタグを確定するか、時間がたつと閉じる(閉じるボタンは押さなくてよい) */
+let SHEET_T = 0;
+function sheet(kind, icon, title, rows, note, extra = '', ms = 0) {
+  const el = $('sheet'); if (!el) return;
+  clearTimeout(SHEET_T);
+  el.className = 'sheet-back ' + kind; el.hidden = false;
+  el.innerHTML = `<div class="sheet" onclick="if(!event.target.closest('button'))closeSheet()">
+    <div class="sh-top"><div class="sh-ic">${icon}</div><div class="sh-t">${title}</div></div>
+    ${rows.length ? `<div class="sh-rows">${rows.map(([l, v, c]) => `<div class="sh-r"><span class="sh-l">${l}</span><span class="sh-v ${c || ''}">${v}</span></div>`).join('')}</div>` : ''}
+    ${note ? `<div class="sh-n">${note}</div>` : ''}${extra}
+    <div class="sh-close">画面をタッチすると閉じます${ms ? `(${Math.round(ms / 1000)}秒で自動で閉じます)<i class="bar" style="animation-duration:${ms}ms"></i>` : ''}</div></div>`;
+  if (ms) SHEET_T = setTimeout(closeSheet, ms);
+}
+function closeSheet() { clearTimeout(SHEET_T); const el = $('sheet'); if (el) { el.hidden = true; el.innerHTML = ''; } }
 function toggleReg() { F.auto = !F.auto; lsSet('bi_reg', F.auto ? 'auto' : 'manual'); renderReg(); toast(F.auto ? '自動登録: 3つそろうと、すぐに登録します' : '手動登録: 3つそろったら「登録する」を押します'); step(); }
 function setMode(m) {
   F.mode = m; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
@@ -166,7 +207,7 @@ function onCode(text, src = 'cam') {
     if (F.mode !== '置く') setMode('置く');
     F.cart = { code: t.code, name: m.name || '', pz: m.code ? m.pz : t.pz }; F.moveCand = false;
     beep('ok'); flash('ok');
-    msg(`台車を <b>${esc(F.cart.code)}</b> に固定しました`);
+    msg(`台車を <b>${esc(F.cart.code)}</b> に固定しました`); say('台車 ' + spell(F.cart.code));
     return step();
   }
   if (t.kind === 'loc') {
@@ -174,9 +215,11 @@ function onCode(text, src = 'cam') {
     if (F.mode !== '置く') setMode('置く');
     const changed = !F.loc || F.loc.code !== t.code;
     F.loc = { code: t.code, type: m.type || t.type, name: m.name || '', pz: m.code ? m.pz : t.pz };
-    F.moveCand = !pending() && !!F.cart && changed;   // 部品なしで 台車 → 置き場所 = 台車ごとの移動
+    // 部品なしで 台車 → 置き場所 = 台車ごとの移動。ただし部品が載っていて、前の置き場所と違うときだけ
+    // (空の台車や、まだ場所の記録がない台車なら、置き場所を固定するだけ)
+    F.moveCand = !pending() && !!F.cart && changed && !!CARTLOC[F.cart.code] && CARTLOC[F.cart.code] !== t.code && onCartCount(F.cart.code) > 0;
     beep('ok'); flash('ok');
-    msg(`置き場所を <b>${esc(F.loc.code)}</b> に固定しました`);
+    msg(`置き場所を <b>${esc(F.loc.code)}</b> に固定しました`); say('置き場所 ' + spell(F.loc.code));
     return step();
   }
   // 部品タグ
@@ -189,6 +232,7 @@ function onCode(text, src = 'cam') {
     if (STAT[P.tag] === to) {   // 同じステータスにもう一度: 送らない
       F.part = { ...P, done: true, ctx: ctx(), dup: true }; renderPair(); beep('dup'); flash('dup');
       RECENT.unshift({ ev: { type: 'dup', at: now(), part: P.part, tag: P.tag, data: { to } }, state: 'skip' }); renderRecent();
+      sheet('dup', '✓', `すでに「${esc(to)}」です`, [['部品', `<span class="mono">${esc(P.part)}</span>`]], '今回は記録していません。<b>数は増えていません。</b>', '', 5000); say(`すでに${to}です`);
       return msg(`<div class="dupbox"><div class="db-i">✓</div><div><div class="db-t">この部品はすでに「${esc(to)}」です</div><div class="db-w"><b class="mono">${esc(P.part)}</b>(${esc(P.tag)})</div><div class="db-s">今回は記録しませんでした(数は増えません)</div></div></div>`, 'dup');
     }
     F.part = { ...P, done: true, ctx: ctx() }; renderPair();
@@ -202,7 +246,12 @@ function onCode(text, src = 'cam') {
     const pcs = Object.values(MAST.carts).filter(c => c.pz).map(c => c.code), pzs = Object.values(MAST.locs).filter(l => l.pz).map(l => l.code);
     msg(`<b>優先品です</b>${ALERT_PRI[P.part] && !P.pri ? '(管理からのアラート)' : '(タグで指定)'}。優先台車${pcs.length ? `(${pcs.map(esc).join('・')})` : ''}か優先置き場${pzs.length ? `(${pzs.map(esc).join('・')})` : ''}へ`, 'pri');
   } else { beep('ok'); flash('ok'); msg(`<b class="mono">${esc(P.part)}</b> を読みました`); }
-  return step(true);
+  step(true);
+  if (pri && pending() && $('sheet').hidden) {   // まだ登録されていない優先品は、大きく知らせる
+    const pcs = Object.values(MAST.carts).filter(c => c.pz).map(c => c.code), pzs = Object.values(MAST.locs).filter(l => l.pz).map(l => l.code);
+    sheet('pri', '!', '優先品です', [['優先の台車', esc(pcs.join('・') || '-'), 'ok'], ['優先の置き場所', esc(pzs.join('・') || '-'), 'ok']], `<b class="mono">${esc(P.part)}</b> ${esc(partName(P))}`, '', 5000);
+    say('優先品です。優先の台車に載せてください');
+  }
 }
 // タグを1枚読むたびに呼ぶ: そろっていれば、自動なら登録・手動ならボタンを出す
 function step(keepMsg) {
@@ -239,8 +288,16 @@ function planError(r) {   // 計画と違う: 登録せずにエラー。管理�
     send(newEvent('ng', { tag: P.tag || '', part: P.part || '', lot: P.lot || '', cart: F.cart.code, loc: F.loc.code, data: { kind: r.kind, reasons: ngText(r.ng), cart: F.cart.code } }));
   }
   renderPair();
-  msg(`<b>エラー: 計画と違うため登録していません</b><br>${ngText(r.ng).map(esc).join('<br>')}<br>${r.move ? `<span class="small">※この部品はすでに ${esc(whereNow(r.move))} に登録済みです</span><br>` : ''}<span class="small">正しい${r.ng.map(x => x.k).join('・')}のタグを読み直すと続けられます</span>
-    <div class="ngact"><button class="btn" onclick="register(true)">計画外として登録する</button></div>`, 'ng');
+  const bc = r.ng.find(x => x.k === '台車'), bl = r.ng.find(x => x.k === '置き場所');
+  const what = bc && bl ? '台車と置き場所' : bc ? '台車' : '置き場所';
+  const rows = [];
+  if (bc) rows.push(['正しい台車', '○ ' + esc(bc.want.join('・')), 'ok'], ['読んだ台車', '✕ ' + esc(bc.got), 'bad']);
+  if (bl) rows.push(['正しい置き場所', '○ ' + esc(bl.want.join('・')), 'ok'], ['読んだ置き場所', '✕ ' + esc(bl.got), 'bad']);
+  sheet('ng', '✕', r.kind === 'cart' ? 'この台車は、ここに置けません' : `${what}がちがいます`, rows,
+    `<b>登録していません。</b>正しい${what}のタグを読んでください${r.kind === 'place' ? `<div class="sh-sub">部品: <b class="mono">${esc(F.part.part)}</b> ${esc(partName(F.part))}${isPriPart(F.part) ? ' <span class="pri">優先品</span>' : ''}</div>` : ''}`,
+    `<div class="sh-btns"><button class="btn sh-alt" onclick="closeSheet();register(true)">計画外として登録する</button></div>`);
+  say(`エラーです。${what}がちがいます。` + (bc ? `台車は ${spell(bc.want[0])}。` : '') + (bl ? `置き場所は ${spell(bl.want[0])} です。` : ''));
+  msg(`✕ <b>エラー: ${what}がちがいます</b>(登録していません)`, 'ng');
 }
 // 同じ部品を、同じ台車・置き場所にもう一度読んだ: 送らない
 function dupStop(prev) {
@@ -248,14 +305,17 @@ function dupStop(prev) {
   F.part = { ...P, done: true, ctx: ctx(), dup: true };
   RECENT.unshift({ ev: { type: 'dup', at: now(), part: P.part, tag: P.tag, cart: prev.cart, loc: CARTLOC[prev.cart] || prev.loc, data: {} }, state: 'skip' }); renderRecent();
   beep('dup'); flash('dup'); renderPair();
-  msg(`<div class="dupbox"><div class="db-i">✓</div><div><div class="db-t">この部品は登録済みです</div>
-    <div class="db-w"><b class="mono">${esc(P.part)}</b>(${esc(P.tag)})は、もう <b>${esc(whereNow(prev))}</b> にあります</div>
-    <div class="db-s">同じ場所なので、今回は記録しませんでした(数は増えません)<br>${hms(prev.at)} に ${esc(prev.by)} が登録</div></div></div>`, 'dup');
+  sheet('dup', '✓', 'この部品は登録済みです', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['いまの場所', esc(whereNow(prev)), 'ok']], '同じ場所なので、今回は記録していません。<b>数は増えていません。</b>', '', 5000);
+  say('登録済みです。数は増えていません');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> は<b>登録済み</b>(${esc(whereNow(prev))})。数は増えていません`, 'dup');
 }
 // 別の台車・置き場所にすでに登録されている部品: 移し替えでよいか確認(数を二重に数えない)
 function askMove(r, force) {
   beep('dup'); flash('dup'); renderPair();
   const P = F.part;
+  sheet('dup', '?', '移し替えますか?', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['いまの場所', esc(whereNow(r.move))], ['移す先', `${esc(F.cart.code)}(${esc(F.loc.code)})`, 'ok']],
+    'この部品はすでに登録されています。押さなければ、移し替えはしません。', `<div class="sh-btns"><button class="btn sh-main" onclick="closeSheet();register(${force ? 'true' : 'false'}, true)">移し替える</button></div>`, 8000);
+  say('この部品は登録済みです。移し替える場合は、ボタンを押してください');
   msg(`<b>この部品はすでに登録されています</b><br><b class="mono">${esc(P.part)}</b>(${esc(P.tag)})は <b>${esc(whereNow(r.move))}</b> に登録済み(${hms(r.move.at)} ${esc(r.move.by)})。<br>
     <b>${esc(F.cart.code)}(${esc(F.loc.code)})</b> へ移し替えますか?<div class="ngact"><button class="btn mv" onclick="register(${force ? 'true' : 'false'}, true)">移し替える</button><span class="small autoclose">押さなければ8秒で取りやめ<i class="bar" style="animation-duration:8s"></i></span></div>`, 'dup');
   clearTimeout(MOVE_T);
@@ -271,9 +331,10 @@ function link(ng = []) {
   send(ev); LAST_NG = '';
   F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx();
   const where = `<b>${esc(C.code)}</b>(${esc(L.code)})`;
-  if (offPlan) { beep('pri'); flash('ng'); return msg(`<b class="mono">${esc(P.part)}</b> → ${where} を<b>計画外として</b>登録しました`, 'warn'); }
-  if (pri && !C.pz && !L.pz) { beep('pri'); flash('pri'); return msg(`<b>${esc(P.part)}</b> を ${where} に載せました。<b>優先品です。優先台車か優先置き場へ移してください</b>`, 'pri'); }
+  if (offPlan) { beep('pri'); flash('ng'); say('計画外として登録しました'); return msg(`<b class="mono">${esc(P.part)}</b> → ${where} を<b>計画外として</b>登録しました`, 'warn'); }
+  if (pri && !C.pz && !L.pz) { beep('pri'); flash('pri'); say('登録しました。優先品です。優先の台車へ移してください'); return msg(`<b>${esc(P.part)}</b> を ${where} に載せました。<b>優先品です。優先台車か優先置き場へ移してください</b>`, 'pri'); }
   beep('link'); flash('ok');
+  say(from ? '移し替えました' : '登録しました');
   msg(`<b class="mono">${esc(P.part)}</b> → ${where} に${from ? `移し替えました(${esc(from)} から)` : '登録しました'}${!pri && (C.pz || L.pz) ? '(通常品を優先の台車・置き場に置いています)' : ''}`, 'ok');
 }
 function moveCart(ng = []) {   // 部品なしで 台車 → 置き場所: 台車ごと移動
@@ -281,7 +342,7 @@ function moveCart(ng = []) {   // 部品なしで 台車 → 置き場所: 台�
   send(newEvent('cart', { loc: L.code, cart: C.code, data: { cart: C.code, cartPz: C.pz, locType: L.type, pz: L.pz, offPlan } }));
   F.moveCand = false; LAST_NG = '';
   if (F.part) F.part = null;
-  renderPair(); linkedFx(); beep('link'); flash('ok');
+  renderPair(); linkedFx(); beep('link'); flash('ok'); say('台車ごと移動しました');
   msg(`台車 <b>${esc(C.code)}</b> を <b>${esc(L.code)}</b> に${offPlan ? '<b>計画外として</b>' : ''}移動しました(載っている部品もいっしょに移動)`, offPlan ? 'warn' : 'ok');
 }
 function manualIn() { const v = $('manual').value.trim(); $('manual').value = ''; if (v) onCode(v, 'manual'); }
@@ -358,13 +419,13 @@ function demoReset() {
   OUTBOX = OUTBOX.filter(e => e.type === 'hello' ? false : (e.data.t || 0) > t0); lsSet('bi_outbox', JSON.stringify(OUTBOX));
   Object.assign(F, { part: null, cart: null, loc: null, moveCand: false }); CAND = null; renderCand();
   renderPair(); renderRecent(); refreshMasters();
-  beep('link'); msg('<b>管理画面でデモがリセットされました。</b>はじめから登録できます', 'ok');
+  beep('link'); closeSheet(); say('デモがリセットされました'); msg('<b>管理画面でデモがリセットされました。</b>はじめから登録できます', 'ok');
   setTimeout(() => poll(), 300);
 }
 const ALERTQ = [];
 function showAlert(e) {
   if (ALERTQ.find(a => a.id === e.id)) return;
-  ALERTQ.push(e); beep('pri'); renderAlert();
+  ALERTQ.push(e); beep('pri'); renderAlert(); say('管理から、優先のお知らせです。' + ((e.data || {}).name || ''));
 }
 function renderAlert() {
   const bar = $('alertbar'); const e = ALERTQ[0];
@@ -386,6 +447,7 @@ function ackAlert() {
 let DETECTOR = null;
 async function startCamera() {
   beep('ok');   // 音を鳴らせるようにする(スマホはボタン操作のあとでないと鳴らない)
+  pickVoice(); say('スキャンを始めます');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
     const v = $('video'); v.srcObject = stream; await v.play();
@@ -433,7 +495,7 @@ function detected(text) {
   if (CAND && CAND.text === text) return;
   if (CAND && nowT - CAND.at < 1200) return;   // 出したばかりのカードはすぐには入れ替えない
   const t = parseTag(text); if (!worthIt(t)) return;
-  CAND = { text, t, at: nowT }; beep('tick'); renderCand();
+  CAND = { text, t, at: nowT }; beep('tick'); closeSheet(); renderCand();   // 次のタグに向けたら、お知らせ画面は閉じる
   clearTimeout(CAND_T); CAND_T = setTimeout(() => { if (CAND && CAND.text === text) { QUIET[text] = Date.now() + 3000; CAND = null; renderCand(); } }, 4000);
 }
 function renderCand() {
@@ -451,7 +513,7 @@ function renderCand() {
 }
 function confirmCand() {
   const c = CAND; if (!c) return;
-  CAND = null; clearTimeout(CAND_T); renderCand();
+  CAND = null; clearTimeout(CAND_T); renderCand(); closeSheet();
   QUIET[c.text] = Date.now() + 2500;
   onCode(c.text, 'tap');
 }
