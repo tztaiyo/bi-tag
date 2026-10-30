@@ -5,8 +5,9 @@
    - 部品がない状態で台車 → 置き場所を読むと「台車ごとの移動」として記録される
    - タグの読み取りはこの端末の中で行い、結果だけをスプレッドシートに送る
    ===================================================================== */
-const MODES = ['置く', '検査済', '保留'];
-const F = { mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
+// 画面の名前と内部の名前: 受入(台車に載せる・置く) / 検査(検査机で検査済・保留) / 入庫(入庫前→入庫済)
+const MODES = [['置く', '受入'], ['検査', '検査'], ['入庫', '入庫']];
+const F = { desk: null, result: '検査済', holdPending: null, inspWait: null, mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
 let MAST = { tags: {}, locs: {}, carts: {} };
 let OUTBOX = [];            // 送信待ちのイベント
 let RECENT = [];            // 画面に出す最近の操作 { ev, state: sending|sent|queued, ms }
@@ -17,14 +18,32 @@ const START_T = Date.now();
 /* 二重登録を防ぐため、全端末の登録結果をこの端末でも把握しておく(3秒ごとに受信) */
 const PLACED = {};          // タグ → { cart, loc, at, by }  最後に登録された台車・置き場所
 const CARTLOC = {};         // 台車 → 置き場所
-const STAT = {};            // タグ → ステータス(検査済・保留)
+const STAT = {};            // タグ → ステータス(検査済・保留・入庫済)
+const HOLDR = {};           // タグ → 保留の理由
+const ORDERS = {};          // 管理からの移動の指示 id → { e, done, mine }
 const APPLIED = new Set();
 function applyEv(e) {
   if (APPLIED.has(e.id)) return; APPLIED.add(e.id);
   if (e.type === 'place') { PLACED[e.tag] = { cart: e.cart || '', loc: e.loc, at: e.at, by: e.device }; if (e.cart) CARTLOC[e.cart] = e.loc; if (!STAT[e.tag]) STAT[e.tag] = '未検査'; }
-  else if (e.type === 'cart') CARTLOC[e.cart] = e.loc;
-  else if (e.type === 'status') STAT[e.tag] = e.data.to === '解除' ? '未検査' : e.data.to;
+  else if (e.type === 'cart') { CARTLOC[e.cart] = e.loc; for (const o of Object.values(ORDERS)) if (!o.done && o.e.cart === e.cart && o.e.loc === e.loc) { o.done = e; orderDone(o); } }
+  else if (e.type === 'status') {
+    STAT[e.tag] = e.data.to === '解除' ? '未検査' : e.data.to;
+    if (e.data.to === '保留') HOLDR[e.tag] = e.data.reason || '';
+    if (e.loc) {   // 検査机で検査した = 部品はその場所にある
+      const p = PLACED[e.tag], cl = p && p.cart ? CARTLOC[p.cart] : '';
+      if (cl !== e.loc) PLACED[e.tag] = { cart: '', loc: e.loc, at: e.at, by: e.device };
+    }
+  }
+  else if (e.type === 'order') ORDERS[e.id] = ORDERS[e.id] || { e, done: null, mine: false };
+  else if (e.type === 'ack' && e.data.order && ORDERS[e.data.order]) ORDERS[e.data.order].acked = e;
 }
+const locOf = tag => { const p = PLACED[tag]; return p ? (p.cart ? (CARTLOC[p.cart] || p.loc) : p.loc) : ''; };
+function statusOf(tag) {   // この端末から見た、いまのステータス
+  let s = STAT[tag] || (PLACED[tag] ? '未検査' : '未受入');
+  if (s === '検査済' && (MAST.locs[locOf(tag)] || {}).type === '入庫前') s = '未入庫';
+  return s;
+}
+const locsOfType = t => Object.values(MAST.locs).filter(l => l.type === t).map(l => l.code);
 const whereNow = p => p ? (p.cart ? `${p.cart}(${CARTLOC[p.cart] || p.loc})` : p.loc) : '';
 const onCartCount = c => Object.values(PLACED).filter(p => p.cart === c).length;
 
@@ -70,11 +89,14 @@ function renderShell() {
     <div class="camhint" id="camhint"></div>
     <div class="candwrap" id="candwrap"></div>
   </section>
-  <nav class="modes">${MODES.map(m => `<button data-m="${m}" onclick="setMode('${m}')">${m}</button>`).join('')}</nav>
+  <div class="orderbar" id="orderbar" hidden></div>
+  <nav class="modes">${MODES.map(([m, label]) => `<button data-m="${m}" onclick="setMode('${m}')">${label}</button>`).join('')}</nav>
+  <div class="results" id="results" hidden><span>検査の結果</span>${['検査済', '保留'].map(r => `<button data-res="${r}" onclick="setResult('${r}')">${r === '検査済' ? '✓ 検査済' : '保留'}</button>`).join('')}</div>
   <div class="reasons" id="reasons" hidden>${HOLD_REASONS.map(r => `<button data-r="${r}" onclick="setReason('${r}')">${r}</button>`).join('')}</div>
   <section class="pair" id="pair">
     <div class="slot wide" id="slotP"></div>
     <div class="pair2" id="pair2"><div class="slot cart" id="slotC"></div><div class="arrow" id="arrow">→</div><div class="slot loc" id="slotL"></div></div>
+    <div class="slot loc desk" id="slotD" hidden></div>
   </section>
   <div class="act" id="act" hidden></div>
   <div class="msg" id="msg"></div>
@@ -128,12 +150,21 @@ function sheet(kind, icon, title, rows, note, extra = '', ms = 0) {
 function closeSheet() { clearTimeout(SHEET_T); const el = $('sheet'); if (el) { el.hidden = true; el.innerHTML = ''; } }
 function toggleReg() { F.auto = !F.auto; lsSet('bi_reg', F.auto ? 'auto' : 'manual'); renderReg(); toast(F.auto ? '自動登録: 3つそろうと、すぐに登録します' : '手動登録: 3つそろったら「登録する」を押します'); step(); }
 function setMode(m) {
+  const changed = F.mode !== m;
   F.mode = m; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
-  $('reasons').hidden = m !== '保留'; $('pair2').hidden = m !== '置く';
-  if (m !== '置く') { F.part = null; F.moveCand = false; }
+  $('pair2').hidden = m !== '置く'; $('slotD').hidden = $('results').hidden = m !== '検査';
+  $('reasons').hidden = !(m === '検査' && F.result === '保留');
+  if (changed) { F.part = null; F.moveCand = false; F.inspWait = null; }
   hint(); renderPair();
+  if (changed && $('msg')) msg(m === '検査' ? (F.desk ? `検査: <b>${esc(F.desk.code)}</b> で検査した部品のタグを読んでください` : '検査: まず <b>自分の机の場所タグ</b> を読んでください')
+    : m === '入庫' ? '入庫: 入庫前の置き場所にある部品のタグを読むと <b>入庫済</b> になります' : '受入: 部品・台車・置き場所のタグを読んでください');
 }
-function setReason(r) { F.reason = r; document.querySelectorAll('.reasons button').forEach(b => b.classList.toggle('on', b.dataset.r === r)); }
+function setResult(r) {
+  F.result = r; document.querySelectorAll('.results button').forEach(b => b.classList.toggle('on', b.dataset.res === r));
+  $('reasons').hidden = !(F.mode === '検査' && r === '保留'); hint();
+}
+function clearDesk() { if (!F.desk) return; F.desk = null; renderPair(); msg('自分の机の固定を解除しました'); }
+function setReason(r) { F.reason = r; hint(); document.querySelectorAll('.reasons button').forEach(b => b.classList.toggle('on', b.dataset.r === r)); }
 // 台車と置き場所は、それぞれ別々に解除できる
 function clearCart() { if (!F.cart) return; F.cart = null; F.moveCand = false; renderPair(); msg('台車の固定を解除しました'); }
 function clearLoc() { if (!F.loc) return; F.loc = null; F.moveCand = false; renderPair(); msg('置き場所の固定を解除しました'); }
@@ -148,7 +179,9 @@ function nextStep() {   // いま何をかざせばよいか
 }
 function hint() {
   const t = F.mode === '置く' ? nextStep()
-    : F.mode === '検査済' ? '検査が終わった部品のタグをかざしてください' : `保留にする部品のタグをかざしてください(理由: ${F.reason})`;
+    : F.mode === '検査' ? (F.holdPending ? `保留品を保留場所に置いて、保留場所のタグを読んでください` : !F.desk ? '自分の机の場所タグを読んでください'
+      : `${F.desk.code} で検査した部品のタグを読んでください(結果: ${F.result}${F.result === '保留' ? '・' + F.reason : ''})`)
+    : '入庫前の置き場所にある部品のタグを読んでください';
   const h = $('camhint'); if (h) h.textContent = t;
 }
 function partName(p) { return (MAST.tags[p.tag] || {}).name || ''; }
@@ -174,7 +207,9 @@ function renderPair() {
   const plan = put && pending() ? (MAST.plans || {})[P.part] : null;
   const planLine = k => { const b = bad(k); return b ? `<div class="sl-ng">計画: ${esc(b.want.join('・'))}</div>` : ''; };
   $('slotP').className = 'slot wide' + (P ? ' set' : '') + (P && isPriPart(P) ? ' isPri' : '') + (P && P.done ? ' done' : '') + (want === 'P' && (!P || P.done) ? ' want' : '');
-  $('slotP').innerHTML = P ? `${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}${plan ? ` <span class="sl-plan">計画: ${esc(plan.carts.join('・') || '台車指定なし')} @ ${esc(plan.locs.join('・') || '場所指定なし')}</span>` : ''}</div>`
+  const hold = P ? ((MAST.plans || {})[P.part] || {}).hold : '';
+  const stNow = P && !put ? `<span class="st st-${statusOf(P.tag)}">${statusOf(P.tag)}</span>` : '';
+  $('slotP').innerHTML = P ? `${hold ? `<div class="sl-band hold">計画で保留 ・ 理由: ${esc(hold)}</div>` : ''}${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${stNow}${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}${plan ? ` <span class="sl-plan">計画: ${esc(plan.carts.join('・') || '台車指定なし')} @ ${esc(plan.locs.join('・') || '場所指定なし')}</span>` : ''}</div>`
     : `<div class="sl-k">${put ? '① ' : ''}部品</div><div class="sl-e">部品タグ</div>`;
   $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (put && want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
   $('slotC').innerHTML = C ? `<div class="sl-k">② 台車</div><div class="sl-v mono">${esc(C.code)}</div><div class="sl-s">${esc(C.name || '')} ・ ${onCartCount(C.code)}点</div>${C.pz ? '<span class="pri">優先台車</span>' : ''}${planLine('台車')}<button class="unfix" onclick="clearCart()">✕ 台車を解除</button>`
@@ -182,6 +217,11 @@ function renderPair() {
   $('slotL').className = 'slot loc' + (L ? ' set' : '') + (L && L.pz ? ' pz' : '') + (put && want === 'L' ? ' want' : '') + (bad('置き場所') ? ' bad' : '');
   $('slotL').innerHTML = L ? `<div class="sl-k">③ 置き場所</div><div class="sl-v mono">${esc(L.code)}</div><div class="sl-s">${esc(L.type)} ${esc(L.name || '')}</div>${L.pz ? '<span class="pri">優先置き場</span>' : ''}${planLine('置き場所')}<button class="unfix" onclick="clearLoc()">✕ 置き場所を解除</button>`
     : `<div class="sl-k">③ 置き場所</div><div class="sl-e">場所タグ</div>`;
+  const D = F.desk;
+  $('slotD').className = 'slot loc desk' + (D ? ' set' : ' want');
+  $('slotD').innerHTML = D ? `<div class="sl-k">自分の机(検査する場所)</div><div class="sl-row"><span class="sl-v mono">${esc(D.code)}</span><span class="sl-s">${esc(D.type)} ${esc(D.name || '')}</span></div><button class="unfix" onclick="clearDesk()">✕ 机を解除</button>`
+    : `<div class="sl-k">自分の机(検査する場所)</div><div class="sl-e">机の場所タグを読んでください</div>`;
+  document.querySelectorAll('.results button').forEach(b => b.classList.toggle('on', b.dataset.res === F.result));
   renderAct(); hint();
 }
 function renderAct() {   // 手動登録のときの「登録する」ボタン
@@ -212,6 +252,7 @@ function onCode(text, src = 'cam') {
     msg(`台車を <b>${esc(F.cart.code)}</b> に固定しました`); say('台車 ' + spell(F.cart.code));
     return step();
   }
+  if (t.kind === 'loc' && F.mode === '検査') return inspLoc(t);
   if (t.kind === 'loc') {
     const m = MAST.locs[t.code] || {};
     if (F.mode !== '置く') setMode('置く');
@@ -229,19 +270,8 @@ function onCode(text, src = 'cam') {
   // カメラに同じ部品タグが映り続けているだけ(台車・置き場所も変わっていない)なら、もう一度は処理しない
   if (src === 'cam' && F.part && F.part.done && F.part.tag === P.tag && F.part.ctx === ctx()) return;
   const pri = isPriPart(P);
-  if (F.mode !== '置く') {
-    const to = F.mode;
-    if (STAT[P.tag] === to) {   // 同じステータスにもう一度: 送らない
-      F.part = { ...P, done: true, ctx: ctx(), dup: true }; renderPair(); beep('dup'); flash('dup');
-      RECENT.unshift({ ev: { type: 'dup', at: now(), part: P.part, tag: P.tag, data: { to } }, state: 'skip' }); renderRecent();
-      sheet('dup', '✓', `すでに「${esc(to)}」です`, [['部品', `<span class="mono">${esc(P.part)}</span>`]], '今回は記録していません。<b>数は増えていません。</b>', '', 5000); say(`すでに${to}です`);
-      return msg(`<div class="dupbox"><div class="db-i">✓</div><div><div class="db-t">この部品はすでに「${esc(to)}」です</div><div class="db-w"><b class="mono">${esc(P.part)}</b>(${esc(P.tag)})</div><div class="db-s">今回は記録しませんでした(数は増えません)</div></div></div>`, 'dup');
-    }
-    F.part = { ...P, done: true, ctx: ctx() }; renderPair();
-    const ev = newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: F.mode, reason: F.mode === '保留' ? F.reason : '', pri } });
-    send(ev); beep(pri ? 'pri' : 'ok'); flash(pri ? 'pri' : 'ok');
-    return msg(`<b class="mono">${esc(P.part)}</b> を <b>${esc(F.mode)}</b> にしました${F.mode === '保留' ? `(${esc(F.reason)})` : ''}`, 'ok');
-  }
+  if (F.mode === '検査') return inspect(P);
+  if (F.mode === '入庫') return stockIn(P);
   F.part = P; F.moveCand = false;
   // 二重読み取り(登録済みの部品)がいちばん優先。優先品・計画のチェックより先に知らせる
   if (PLACED[P.tag]) return dupStop(PLACED[P.tag]);
@@ -257,6 +287,106 @@ function onCode(text, src = 'cam') {
     say('優先品です。優先の台車に載せてください');
   }
 }
+/* ---------------- 検査(検査机で: 検査済 / 保留) ---------------- */
+function inspLoc(t) {
+  const m = MAST.locs[t.code] || {};
+  const L = { code: t.code, type: m.type || t.type, name: m.name || '' };
+  if (F.holdPending && L.type === '保留場所') return placeHold(L);
+  F.desk = L; beep('ok'); flash('ok'); renderPair();
+  say('検査の場所 ' + spell(L.code));
+  if (F.inspWait) { const P = F.inspWait; F.inspWait = null; return inspect(P); }   // 机より先に読んだ部品を、いま検査する
+  msg(`自分の机を <b>${esc(L.code)}</b> ${esc(L.name || '')} に固定しました。検査した部品のタグを読んでください${L.type !== '検査机' ? `<br><span class="small">(この場所の種別は「${esc(L.type)}」です)</span>` : ''}`, 'ok');
+}
+function dupSheet(P, title, note) {
+  F.part = { ...P, done: true, ctx: ctx(), dup: true }; renderPair(); beep('dup'); flash('dup');
+  RECENT.unshift({ ev: { type: 'dup', at: now(), part: P.part, tag: P.tag, data: { to: title } }, state: 'skip' }); renderRecent();
+  sheet('dup', '✓', title, [['部品', `<span class="mono">${esc(P.part)}</span>`]], note || '今回は記録していません。<b>数は増えていません。</b>', '', 5000);
+  say(title.replace(/[「」]/g, '') + '。数は増えていません');
+  msg(`✓ <b class="mono">${esc(P.part)}</b>: ${esc(title)}(記録していません)`, 'dup');
+}
+function stopSheet(P, title, rows, note, speech) {   // 進めない理由を大きく知らせる(記録しない)
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); beep('ng'); flash('ng');
+  sheet('ng', '✕', title, [['部品', `<span class="mono">${esc(P.part)}</span>`], ...rows], note);
+  say(speech || title); msg(`✕ <b>${esc(title)}</b>(記録していません)`, 'ng');
+}
+function inspect(P) {
+  const st = statusOf(P.tag), planHold = ((MAST.plans || {})[P.part] || {}).hold;
+  const to = planHold ? '保留' : F.result, reason = planHold || (to === '保留' ? F.reason : '');
+  if (st === '未受入') return stopSheet(P, 'まだ受入されていません', [['いまの状態', '未受入', 'bad']], '先に「受入」で台車に載せてください。', 'まだ受入されていません。先に受入をしてください');
+  if (st === to) return dupSheet(P, `すでに「${to}」です`);
+  if (to === '検査済' && (st === '未入庫' || st === '入庫済')) return dupSheet(P, `すでに検査済です(${st})`);
+  if (!F.desk) {   // 机が決まっていない: 部品は覚えておき、机のタグを読んだら続ける
+    F.inspWait = P; F.part = P; renderPair(); beep('dup');
+    sheet('dup', '?', '自分の机のタグを読んでください', [['部品', `<span class="mono">${esc(P.part)}</span>`]], '机(検査する場所)の場所タグを読むと、この部品の検査を記録します。', '', 6000);
+    say('先に、自分の机の場所タグを読んでください'); return msg('先に <b>自分の机の場所タグ</b> を読んでください', 'warn');
+  }
+  const pri = isPriPart(P);
+  send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, loc: F.desk.code, data: { to, reason, planned: !!planHold, pri, from: st } }));
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx();
+  if (to === '保留') {
+    F.holdPending = P; hint();
+    const hl = locsOfType('保留場所');
+    beep('pri'); flash('pri');
+    sheet('hold', '!', '保留品です', [['理由', esc(reason), 'warn'], ['置く場所', esc(hl.join('・') || '保留場所'), 'ok']],
+      `${planHold ? '<b>計画で保留</b>になっている部品です。' : ''}保留場所に置いて、<b>保留場所のタグ</b>を読んでください。`, '', 12000);
+    say(`保留品です。理由は、${reason}。保留場所に置いて、場所のタグを読んでください`);
+    return msg(`! <b class="mono">${esc(P.part)}</b> を <b>保留</b> にしました(${esc(reason)})。保留場所のタグを読んでください`, 'warn');
+  }
+  beep('link'); flash('ok'); say('検査済にしました');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>検査済</b> にしました(${esc(F.desk.code)})`, 'ok');
+}
+function placeHold(L) {   // 保留品を保留場所に置いた
+  const P = F.holdPending; F.holdPending = null;
+  send(newEvent('place', { tag: P.tag, part: P.part, lot: P.lot, loc: L.code, cart: '', data: { hold: true } }));
+  beep('link'); flash('ok'); closeSheet(); renderPair(); linkedFx();
+  say('保留場所に置きました');
+  msg(`✓ 保留品 <b class="mono">${esc(P.part)}</b> を保留場所 <b>${esc(L.code)}</b> に置きました`, 'ok');
+}
+/* ---------------- 入庫(入庫前の場所にある部品を1つずつ) ---------------- */
+function stockIn(P) {
+  const st = statusOf(P.tag);
+  if (st === '入庫済') return dupSheet(P, 'すでに入庫済です');
+  if (st === '保留') return stopSheet(P, '保留品は入庫できません', [['保留の理由', esc(HOLDR[P.tag] || ((MAST.plans || {})[P.part] || {}).hold || '-'), 'warn']], '保留が解除されてから入庫してください。', '保留品は入庫できません');
+  if (st === '未受入' || st === '未検査') return stopSheet(P, 'まだ検査されていません', [['いまの状態', st, 'bad']], '検査済になってから入庫してください。', 'まだ検査されていません');
+  if (st === '検査済') return stopSheet(P, '入庫前の置き場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad'], ['入庫前の場所', esc(locsOfType('入庫前').join('・') || '-'), 'ok']],
+    '先に、台車ごと入庫前の場所へ移してください(受入で 台車 → 入庫前の場所タグ)。', '入庫前の置き場所にありません');
+  send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '入庫済', from: st, at: locOf(P.tag) } }));
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx();
+  beep('link'); flash('ok'); say('入庫しました');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>入庫済</b> にしました`, 'ok');
+}
+/* ---------------- 管理からの移動の指示 ---------------- */
+function openOrders() { return Object.values(ORDERS).filter(o => !o.done && Date.now() - (o.e.data.t || 0) < 12 * 3600e3).sort((a, b) => (a.e.data.t || 0) - (b.e.data.t || 0)); }
+function renderOrders() {
+  const el = $('orderbar'); if (!el) return;
+  const os = openOrders();
+  if (!os.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = os.slice(0, 2).map(o => { const e = o.e, d = e.data || {};
+    return `<div class="ord ${o.mine ? 'mine' : ''}"><div class="od-t">📋 管理からの指示${os.length > 1 ? `(${os.length}件)` : ''}</div>
+      <div class="od-b">台車 <b>${esc(e.cart)}</b> を <b>${esc(d.toName || e.loc)}</b>(${esc(e.loc)})へ移動${d.note ? `<div class="od-n">${esc(d.note)}</div>` : ''}</div>
+      ${o.mine ? `<div class="od-s">実行中: 台車を運び、<b>${esc(e.loc)}</b> の場所タグを読んでください</div>` : `<button class="btn od-go" onclick="startOrder('${e.id}')">はじめる</button>`}</div>`; }).join('');
+}
+function startOrder(id) {
+  const o = ORDERS[id]; if (!o) return;
+  o.mine = true;
+  send(newEvent('ack', { cart: o.e.cart, loc: o.e.loc, data: { order: id } }));
+  setMode('置く'); closeSheet();
+  const m = MAST.carts[o.e.cart] || {};
+  F.cart = { code: o.e.cart, name: m.name || '', pz: !!m.pz }; F.loc = null; F.part = null; F.moveCand = false;
+  renderPair(); renderOrders();
+  msg(`台車 <b>${esc(o.e.cart)}</b> を固定しました。運んだら <b>${esc(o.e.loc)}</b> の場所タグを読んでください`, 'ok');
+  say(`台車 ${spell(o.e.cart)} を、${(o.e.data || {}).toName || spell(o.e.loc)} へ運んで、場所のタグを読んでください`);
+}
+function orderDone(o) {
+  renderOrders();
+  if (o.mine) { toast('指示の移動が完了しました'); say('指示の移動が完了しました'); }
+}
+function newOrder(o) {
+  if (o.e.device === DEVICE.name || Date.now() - (o.e.data.t || 0) > 30 * 60e3) return;
+  beep('pri'); say(`管理から移動の指示です。台車 ${spell(o.e.cart)} を、${(o.e.data || {}).toName || spell(o.e.loc)} へ`);
+}
+
 // タグを1枚読むたびに呼ぶ: そろっていれば、自動なら登録・手動ならボタンを出す
 function step(keepMsg) {
   const r = readyAction();
@@ -405,7 +535,7 @@ function renderRecent() {
   const el = $('recent'); if (!el) return;
   el.innerHTML = RECENT.slice(0, 12).map(r => {
     const e = r.ev, d = e.data || {};
-    const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
+    const what = e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を <span class="st st-${esc(d.to)}">${esc(d.to)}</span>${d.reason ? `(${esc(d.reason)})` : ''}${e.loc ? ` @ ${esc(e.loc)}` : ''}` : e.type === 'ack' && d.order ? `指示を開始: 台車 ${esc(e.cart)} → ${esc(e.loc)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
     const st = r.state === 'skip' ? '<span class="skip">数は増えていません</span>' : r.state === 'sent' ? `<span class="sent">✓ 共有 ${(r.ms / 1000).toFixed(1)}秒 ・ ${r.bytes || ''}B</span>` : r.state === 'sending' ? '<span class="sending">送信中…</span>' : '<span class="queued">送信待ち(端末に保存)</span>';
     return `<div class="rc ${d.pri ? 'p' : ''} ${e.type === 'ng' || d.offPlan ? 'n' : ''}"><span class="t">${hms(e.at)}</span><span class="w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>${st}</div>`;
   }).join('') || '<div class="mute small">まだ操作はありません</div>';
@@ -429,7 +559,9 @@ async function poll(first) {
     rows.forEach((r, i) => {
       if (!r[0]) return;
       const e = rowEvent(r, LASTROW + 1 + i);
+      const isNewOrder = e.type === 'order' && !ORDERS[e.id] && !first;
       applyEv(e);
+      if (isNewOrder) newOrder(ORDERS[e.id]);
       if (e.type === 'alert') {
         ALERT_PRI[e.part] = true;
         const fresh = !ACKED.has(e.id) && e.device !== DEVICE.name && (Date.now() - (e.data.t || 0) < 30 * 60 * 1000);
@@ -437,7 +569,7 @@ async function poll(first) {
       }
       if (e.type === 'ack' && e.device === DEVICE.name) ACKED.add(e.data.alert);
     });
-    LASTROW += rows.length; renderPair();
+    LASTROW += rows.length; renderPair(); renderOrders();
   } catch (e) { }
   renderNet();
 }
@@ -445,7 +577,8 @@ let FIRSTID = '';
 // 管理画面で「デモをリセット」されたら、この端末の記録・固定もはじめからにする
 function demoReset() {
   const t0 = Date.now();
-  for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI]) for (const k of Object.keys(o)) delete o[k];
+  for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI, HOLDR, ORDERS]) for (const k of Object.keys(o)) delete o[k];
+  F.desk = null; F.holdPending = null; F.inspWait = null; renderOrders();
   APPLIED.clear(); LASTROW = 1; RECENT = []; ALERTQ.length = 0; renderAlert();
   OUTBOX = OUTBOX.filter(e => e.type === 'hello' ? false : (e.data.t || 0) > t0); lsSet('bi_outbox', JSON.stringify(OUTBOX));
   Object.assign(F, { part: null, cart: null, loc: null, moveCand: false }); CAND = null; renderCand();
@@ -518,6 +651,7 @@ function worthIt(t) {   // 読んでも何も変わらないタグは候補に�
     if (t.kind === 'loc' && F.loc && F.loc.code === t.code) return false;
     if (t.kind === 'part' && F.part && F.part.tag === t.tag && (pending() || F.part.ctx === ctx())) return false;
   } else if (t.kind === 'part' && F.part && F.part.tag === t.tag && F.part.ctx === ctx()) return false;
+  if (F.mode === '検査' && t.kind === 'loc' && F.desk && F.desk.code === t.code && !F.holdPending) return false;
   return true;
 }
 function detected(text) {

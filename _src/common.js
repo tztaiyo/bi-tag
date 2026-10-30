@@ -158,7 +158,7 @@ const TABS = {
   tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時'] },
   locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
   carts: { title: '台車', cols: ['台車番号', '名称', '優先台車'] },
-  plans: { title: '計画', cols: ['品番', '台車', '置き場所', 'メモ'] },
+  plans: { title: '計画', cols: ['品番', '台車', '置き場所', 'メモ', '保留理由'] },
 };
 const colLetter = n => String.fromCharCode(65 + n - 1);
 const rng = (tab, from = 2, to = '') => `'${TABS[tab].title}'!A${from}:${colLetter(TABS[tab].cols.length)}${to}`;
@@ -166,8 +166,8 @@ async function ensureTabs() {
   const meta = await gapi('?fields=sheets.properties.title');
   const have = new Set((meta.sheets || []).map(s => s.properties.title));
   const missing = Object.values(TABS).filter(t => !have.has(t.title));
-  if (have.has(TABS.events.title))   // 列を追加したときのために、イベントの見出し行をそろえる
-    await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: [{ range: `'${TABS.events.title}'!A1`, values: [TABS.events.cols] }] }) });
+  const exist = Object.values(TABS).filter(t => have.has(t.title));   // 列を追加したときのために、見出し行をそろえる
+  if (exist.length) await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: exist.map(t => ({ range: `'${t.title}'!A1`, values: [t.cols] })) }) });
   if (!missing.length) return;
   await gapi(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: missing.map(t => ({ addSheet: { properties: { title: t.title, gridProperties: { frozenRowCount: 1 } } } })) }) });
   await gapi('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: missing.map(t => ({ range: `'${t.title}'!A1`, values: [t.cols] })) }) });
@@ -199,7 +199,7 @@ async function readMasters(retry = true) {
   }
   const [tv, lv, cv, pv] = (r.valueRanges || []).map(v => v.values || []);
   const plans = {};   // 品番ごと。同じ品番が何行かあれば、下の行(あとで入れたもの)を使う
-  (pv || []).filter(r => r[0]).forEach(r => { plans[r[0]] = { part: r[0], carts: splitList(r[1]), locs: splitList(r[2]), memo: r[3] || '' }; });
+  (pv || []).filter(r => r[0]).forEach(r => { plans[r[0]] = { part: r[0], carts: splitList(r[1]), locs: splitList(r[2]), memo: r[3] || '', hold: (r[4] || '').trim() }; });
   const locs = {}, carts = {};
   (lv || []).filter(r => r[0]).forEach(r => {
     // 以前の版で「置き場所(種別=台車)」として登録したものは、台車として扱う
@@ -220,14 +220,14 @@ function planNG(m, part, cart, loc) {
   const p = ((m && m.plans) || {})[part]; if (!p) return [];
   const r = [];
   if (cart && p.carts.length && !p.carts.includes(cart)) r.push({ k: '台車', want: p.carts, got: cart });
-  if (loc && p.locs.length && !p.locs.includes(loc)) r.push({ k: '置き場所', want: p.locs, got: loc });
+  if (loc && p.locs.length && !p.locs.includes(loc) && !isProcessLoc(m, loc)) r.push({ k: '置き場所', want: p.locs, got: loc });
   return r;
 }
 function cartPlanLocs(m, cart) {   // その台車に載せる計画の部品の置き場所 = 台車を置いてよい場所
   const s = new Set(); Object.values((m && m.plans) || {}).forEach(p => { if (p.carts.includes(cart)) p.locs.forEach(l => s.add(l)); });
   return [...s];
 }
-function cartMoveNG(m, cart, loc) { const ls = cartPlanLocs(m, cart); return ls.length && !ls.includes(loc) ? [{ k: '置き場所', want: ls, got: loc }] : []; }
+function cartMoveNG(m, cart, loc) { if (isProcessLoc(m, loc)) return []; const ls = cartPlanLocs(m, cart); return ls.length && !ls.includes(loc) ? [{ k: '置き場所', want: ls, got: loc }] : []; }
 const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は ${x.want.join('・')}`);
 
 /* ---------------- タグの形式(QRの中身) ----------------
@@ -235,7 +235,10 @@ const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は $
    台車タグ: BI-C;ID=CP-01;PZ=1                                     (PZ=1 なら優先台車)
    場所タグ: BI-L;ID=K-P;K=INSP;PZ=1                                (PZ=1 なら優先置き場)
    タグだけで品番・優先・種類が分かるので、通信できない場所でも判定できる */
-const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', AREA: '置き場' };
+const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', DESK: '検査机', HOLD: '保留場所', PRE: '入庫前', AREA: '置き場' };
+// 工程の場所(検査机・保留場所・入庫前)は、受入の計画チェックの対象外
+const PROCESS_LOC = new Set(['検査机', '保留場所', '入庫前']);
+const isProcessLoc = (m, code) => PROCESS_LOC.has(((m && m.locs) || {})[code] && m.locs[code].type);
 const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
 function parseTag(text) {
   const s = String(text || '').trim();
@@ -253,7 +256,9 @@ function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); retu
 /* ---------------- イベント(出来事)と、いまの状態の組み立て ----------------
    種類: place(部品を台車に載せ、その台車が置き場所にある) / cart(台車ごと置き場所を移動) / status(検査済・保留・解除)
          alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
-const STATUSES = ['未受入', '未検査', '検査済', '保留'];
+/* ステータスの流れ: 未受入 →(台車に載せる)→ 未検査 →(検査机で読む)→ 検査済 / 保留
+                     検査済 →(入庫前の場所に置く)→ 未入庫 →(入庫で読む)→ 入庫済 */
+const STATUSES = ['未受入', '未検査', '検査済', '保留', '未入庫', '入庫済'];
 const HOLD_REASONS = ['数量違い', '不良疑い', '書類不備', 'その他'];
 function eventRow(e) { return [e.id, e.at, e.device, e.account, e.type, e.tag || '', e.part || '', e.lot || '', e.loc || '', JSON.stringify(e.data || {}), e.cart || '']; }
 function rowEvent(r, rowNo) {
@@ -269,7 +274,7 @@ function buildState(masters, events) {
   const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
   for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
   for (const c of Object.keys(masters.carts || {})) cart(c);
-  const alerts = [], devices = {};
+  const alerts = [], orders = [], devices = {};
   for (const e of events) {
     const d = devices[e.device] || (devices[e.device] = { name: e.device, account: e.account, last: '', lastT: 0, n: 0 });
     d.last = e.at; d.lastT = e.data.t || 0; d.n++; if (e.type === 'hello') d.info = e.data;
@@ -285,6 +290,7 @@ function buildState(masters, events) {
       it.hist.push(e);
     } else if (e.type === 'cart') {
       Object.assign(cart(e.cart), { loc: e.loc, since: e.at, by: e.device });
+      for (const o of orders) if (!o.done && o.cart === e.cart && o.to === e.loc) o.done = e;   // 移動の指示が終わった
       for (const it of Object.values(items)) if (it.cart === e.cart) it.hist.push(e);
     } else if (e.type === 'status') {
       const it = item(e.tag, e), to = e.data.to;
@@ -292,19 +298,32 @@ function buildState(masters, events) {
       else if (to === '解除') { it.status = it.prev || '未検査'; it.hold = ''; }
       else it.status = to;
       if (it.status === '未受入') it.status = '未検査';
+      if (e.loc) {   // 検査机で検査した = 部品はその場所にある
+        const cl = it.cart ? (carts[it.cart] || {}).loc : '';
+        if (cl !== e.loc) { it.cart = ''; it.direct = e.loc; }
+      }
+      it.since = e.at; it.by = e.device;
       it.hist.push(e);
     } else if (e.type === 'ng') {   // 計画と違う置き方を現場が検知(登録はしていない)
       if (e.tag) item(e.tag, e).hist.push(e);
     } else if (e.type === 'alert') {
       alerts.push({ ...e, acks: [] });
       for (const it of Object.values(items)) if (it.part === e.part || it.tag === e.tag) { it.pri = true; it.priSrc = 'アラート'; it.hist.push(e); }
+    } else if (e.type === 'order') {   // 管理からの移動の指示(台車を検査机・入庫前などへ)
+      orders.push({ ...e, acks: [], done: null, to: e.loc, cart: e.cart });
     } else if (e.type === 'ack') {
       const a = alerts.find(x => x.id === e.data.alert); if (a) a.acks.push(e);
+      const o = orders.find(x => x.id === e.data.order); if (o) o.acks.push(e);
     }
   }
   // 部品のいまの場所 = 載っている台車の置き場所(台車がなければ直接置いた場所)
-  for (const it of Object.values(items)) it.loc = it.cart ? (carts[it.cart] || {}).loc || '' : it.direct;
-  return { items, carts, alerts, devices };
+  for (const it of Object.values(items)) {
+    it.loc = it.cart ? (carts[it.cart] || {}).loc || '' : it.direct;
+    // 検査済の部品が「入庫前」の場所にあれば、未入庫
+    if (it.status === '検査済' && ((masters.locs || {})[it.loc] || {}).type === '入庫前') it.status = '未入庫';
+    const p = (masters.plans || {})[it.part]; it.planHold = p ? p.hold : '';
+  }
+  return { items, carts, alerts, orders, devices };
 }
 
 /* ---------------- 端末の名前 ---------------- */

@@ -45,3 +45,4 @@ body.login-page{background:linear-gradient(160deg,#12264a 0%,#1d3d72 100%)}
 .lcard p{margin:0;color:var(--ink2)}
 .fl{display:grid;gap:4px;font-size:12px;color:var(--ink2);font-weight:700}
 .loginmsg{color:#a21b1b;font-size:13px;min-height:1em;white-space:pre-wrap}
+.st-未入庫{background:#7c3aed} .st-入庫済{background:#0f766e}

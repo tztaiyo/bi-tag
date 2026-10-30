@@ -42,7 +42,7 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 .packet{position:absolute;left:0;top:calc(50% - 14px);background:#34c472;color:#05210f;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4);font-family:var(--mono)}
 .packet.p{background:#ff4d4d;color:#fff}.packet.a{background:#ffd34d;color:#3b2b00}
 /* KPI */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:14px}
 .kpi{background:#fff;border:1px solid var(--line);border-left:6px solid var(--s-unacc);border-radius:var(--r);padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
 .kpi b{font-size:30px;font-variant-numeric:tabular-nums}
 .kpi.k-未検査{border-left-color:var(--s-uninsp)}.kpi.k-検査済{border-left-color:var(--s-done)}.kpi.k-保留{border-left-color:var(--s-hold)}
@@ -103,3 +103,13 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 .chip{font-size:14px}.lg-t{font-size:14px}.lb-h span{font-size:13.5px}.cb-h{font-size:14px}
 .fr{font-size:15px}.tbl{font-size:15px}.kpi div{font-size:15px}
 .toast{font-size:16px}
+.kpi.k-未入庫{border-left-color:#7c3aed}.kpi.k-入庫済{border-left-color:#0f766e}
+/* 移動の指示 */
+.ordm{max-width:620px}
+.om-top{background:var(--accent);color:#fff;margin:-20px -20px 14px;padding:14px 20px;border-radius:14px 14px 0 0;font-weight:700;font-size:18px;display:flex;justify-content:space-between;align-items:baseline}.om-top span{font-size:13px;font-weight:400;opacity:.9}
+.om-q{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.om-g{display:grid;grid-template-columns:1fr 1fr;gap:10px}.om-g label{display:grid;gap:4px;font-size:13px;font-weight:700;color:var(--ink2)}.om-g select{width:100%}
+.om-sum{margin-top:12px;background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-size:16px}
+.ack.done{font-weight:700;color:var(--ok)}
+.olist{display:grid}.orow{display:grid;grid-template-columns:62px 1fr auto;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:15px;align-items:center}
+.orow .ost{font-size:13px;color:var(--warn);font-weight:700}.orow.done .ost{color:var(--ok)}
