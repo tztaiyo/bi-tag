@@ -158,6 +158,7 @@ const TABS = {
   tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時', '保留', '備考'] },
   locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
   carts: { title: '台車', cols: ['台車番号', '名称', '優先台車'] },
+  lt: { title: 'リードタイム', cols: ['タグ', '品番', 'いまの状態', '入荷(受入)', '保管(入庫)', '入荷→入庫(秒)', '出庫の始まり', '入庫待ち(包装済)', '出庫→出荷(秒)', '書き出し日時'] },
   plans: { title: '計画', cols: ['品番', '台車', '置き場所', 'メモ', '保留理由'] },
 };
 const colLetter = n => String.fromCharCode(65 + n - 1);
@@ -216,18 +217,18 @@ async function readMasters(retry = true) {
 /* ---------------- 計画(どの品番を、どの台車・置き場所に置くか) ----------------
    台車・置き場所は「T-01/K-N」のように複数書ける。空欄はどこでもよい */
 const splitList = v => String(v || '').split(/[\/・,、\s]+/).filter(Boolean);
-function planNG(m, part, cart, loc) {
+function planNG(m, part, cart, loc, typeHint) {
   const p = ((m && m.plans) || {})[part]; if (!p) return [];
   const r = [];
   if (cart && p.carts.length && !p.carts.includes(cart)) r.push({ k: '台車', want: p.carts, got: cart });
-  if (loc && p.locs.length && !p.locs.includes(loc) && !isProcessLoc(m, loc)) r.push({ k: '置き場所', want: p.locs, got: loc });
+  if (loc && p.locs.length && !p.locs.includes(loc) && !isProcessLoc(m, loc, typeHint)) r.push({ k: '置き場所', want: p.locs, got: loc });
   return r;
 }
 function cartPlanLocs(m, cart) {   // その台車に載せる計画の部品の置き場所 = 台車を置いてよい場所
   const s = new Set(); Object.values((m && m.plans) || {}).forEach(p => { if (p.carts.includes(cart)) p.locs.forEach(l => s.add(l)); });
   return [...s];
 }
-function cartMoveNG(m, cart, loc) { if (isProcessLoc(m, loc)) return []; const ls = cartPlanLocs(m, cart); return ls.length && !ls.includes(loc) ? [{ k: '置き場所', want: ls, got: loc }] : []; }
+function cartMoveNG(m, cart, loc, typeHint) { if (isProcessLoc(m, loc, typeHint)) return []; const ls = cartPlanLocs(m, cart); return ls.length && !ls.includes(loc) ? [{ k: '置き場所', want: ls, got: loc }] : []; }
 const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は ${x.want.join('・')}`);
 
 /* ---------------- タグの形式(QRの中身) ----------------
@@ -236,10 +237,11 @@ const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は $
    場所タグ: BI-L;ID=K-P;K=INSP;PZ=1                                (PZ=1 なら優先置き場)
    タグだけで品番・優先・種類が分かるので、通信できない場所でも判定できる */
 const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', DESK: '検査机', HOLD: '保留場所', PRE: '入庫前',
-  SPT: '補用仮置き', SPD: '補用検査机', PKT: '包装仮置き', PKW: '包装作業場', SHP: '出荷前', AREA: '置き場' };
+  OTP: '出庫仮置き', SPT: '補用仮置き', SPD: '補用検査机', PKT: '包装仮置き', PKW: '包装作業場', SHP: '出荷前', AREA: '置き場' };
 // 工程の場所は、受入の計画チェックの対象外
-const PROCESS_LOC = new Set(['検査机', '保留場所', '入庫前', '補用仮置き', '補用検査机', '包装仮置き', '包装作業場', '出荷前']);
-const isProcessLoc = (m, code) => PROCESS_LOC.has(((m && m.locs) || {})[code] && m.locs[code].type);
+const PROCESS_LOC = new Set(['検査机', '保留場所', '入庫前', '出庫仮置き', '補用仮置き', '補用検査机', '包装仮置き', '包装作業場', '出荷前']);
+// 場所の種別は、マスタになければ読んだタグ(K=…)の種別を使う
+const isProcessLoc = (m, code, typeHint) => PROCESS_LOC.has((((m && m.locs) || {})[code] || {}).type || typeHint || '');
 const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
 function parseTag(text) {
   const s = String(text || '').trim();
@@ -263,23 +265,49 @@ function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); retu
 /* ---------------- イベント(出来事)と、いまの状態の組み立て ----------------
    種類: place(部品を台車に載せ、その台車が置き場所にある) / cart(台車ごと置き場所を移動) / status(検査済・保留・解除)
          alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
-/* ステータスの流れ: 未受入 →(台車に載せる)→ 未検査 →(検査机で読む)→ 検査済 / 保留
-                     検査済 →(入庫前の場所に置く)→ 未入庫 →(入庫で読む)→ 入庫済 */
-const STATUSES_1 = ['未受入', '未検査', '検査済', '保留', '未入庫', '入庫済'];
-/* フェーズ2: 入庫済 →(出庫で読む)→ 出庫済 →(補用検査の仮置き・机)→ 補用未検査 →(机で読む)→ 補用検査済
-             →(包装の仮置き)→ 包装待ち →(包装の作業場)→ 包装前 →(読む)→ 包装済 →(出荷前)→ 出荷待ち / (入庫前)→ 未入庫 */
-const STATUSES_2 = ['出庫済', '補用未検査', '補用検査済', '包装待ち', '包装前', '包装済', '出荷待ち'];
+/* ステータスの流れ(2つに分ける)
+   ① 入荷→入庫: 未受入 →(台車に載せる)→ 未検査 →(台車ごと検査机へ・机で読む)→ 検査済(台車から外れ、パレットへ)
+                 →(入庫前へ移動)→ 入庫待ち(検査済) →(入庫で読む)→ 保管      ※計画で保留の部品は 保留(保留棚)
+   ② 出庫→出荷: 保管 →(出庫仮置きへ移動)→ 仮置き →(出庫で読む)→ 出庫済   ※分けた残りは新しいタグで 未入庫(計画側へ戻す)
+                 →(補用仮置き・補用検査机へ)→ 補用未検査 →(読む)→ 補用検査済 →(包装仮置きへ)→ 包装待ち
+                 →(包装作業場へ移動)→ 包装前 →(読む)→ 包装済 →(入庫前へ)→ 入庫待ち(包装済) →(入庫で読む)→ 保管 */
+const STATUSES_1 = ['未受入', '未検査', '検査済', '入庫待ち(検査済)', '保管', '保留', '未入庫'];
+const STATUSES_2 = ['仮置き', '出庫済', '補用未検査', '補用検査済', '包装待ち', '包装前', '包装済', '入庫待ち(包装済)'];
 const STATUSES = [...STATUSES_1, ...STATUSES_2];
 // 置かれている場所の種別で決まるステータス(場所のステータス)
 function deriveStatus(s, t) {
-  if (s === '検査済' && t === '入庫前') return '未入庫';
+  if (s === '検査済' && t === '入庫前') return '入庫待ち(検査済)';
+  if (s === '保管' && t === '出庫仮置き') return '仮置き';
   if (s === '出庫済' && (t === '補用仮置き' || t === '補用検査机')) return '補用未検査';
   if (s === '補用検査済' && t === '包装仮置き') return '包装待ち';
   if (s === '補用検査済' && t === '包装作業場') return '包装前';
-  if (s === '包装済' && t === '出荷前') return '出荷待ち';
-  if (s === '包装済' && t === '入庫前') return '未入庫';
+  if (s === '包装済' && t === '入庫前') return '入庫待ち(包装済)';
   return s;
 }
+// 移動してよい行き先(いまのステータスごと)= 計画はステータスに合わせて進む
+const MOVE_OK = {
+  '検査済': ['入庫前'], '入庫待ち(検査済)': ['入庫前'], '未入庫': ['入庫前'],
+  '保管': ['出庫仮置き'], '仮置き': ['出庫仮置き'],
+  '出庫済': ['補用仮置き', '補用検査机'], '補用未検査': ['補用仮置き', '補用検査机'],
+  '補用検査済': ['包装仮置き', '包装作業場'], '包装待ち': ['包装仮置き', '包装作業場'], '包装前': ['包装作業場'],
+  '包装済': ['入庫前'], '入庫待ち(包装済)': ['入庫前'],
+};
+// いまの予定(ステータスが進むと、予定も進む)
+function nextPlan(s, p, hold) {
+  if (s === '保留') return '保留棚に置いておく(検査しない)';
+  if (hold && (s === '未受入' || s === '未検査')) return '検査しないで保留棚へ';
+  return {
+    '未受入': p ? `受入: 台車 ${p.carts.join('・') || '指定なし'} @ ${p.locs.join('・') || '指定なし'}` : '受入: 台車に載せる',
+    '未検査': '台車ごと検査机へ → 検査', '検査済': '入庫前へ移動', '入庫待ち(検査済)': '入庫する', '未入庫': '入庫前へ → 入庫する',
+    '保管': '保管中(出庫のときに出庫仮置きへ)', '仮置き': '出庫する', '出庫済': '補用検査の仮置きへ', '補用未検査': '補用検査机で検査',
+    '補用検査済': '包装の仮置きへ', '包装待ち': '包装作業場へ移動', '包装前': '包装する', '包装済': '入庫前へ', '入庫待ち(包装済)': '入庫する(保管)',
+  }[s] || '';
+}
+const STATUS_COLOR = { '未受入': '#6b7480', '未検査': '#1d5fc4', '検査済': '#15803d', '入庫待ち(検査済)': '#7c3aed', '保管': '#0f766e', '保留': '#b45309', '未入庫': '#64748b',
+  '仮置き': '#ca8a04', '出庫済': '#475569', '補用未検査': '#2563eb', '補用検査済': '#16a34a', '包装待ち': '#a16207', '包装前': '#c2410c', '包装済': '#0e7490', '入庫待ち(包装済)': '#be185d', 'まとめ済': '#9ca3af' };
+const stColor = s => STATUS_COLOR[s] || '#6b7480';
+const stChip = s => `<span class="st" style="background:${stColor(s)}">${esc(s)}</span>`;
+const SECTION_OF = s => STATUSES_2.includes(s) ? '出庫→出荷' : '入荷→入庫';
 // 出庫で分けた・まとめたときの新しいタグの番号(だれが発行しても同じ番号になるように決める)
 //   分ける: T0003 → T0003-2, T0003-3 …   まとめる: T0002 ほか → T0002-M1, T0002-M2 …
 function nextTagId(base, kind, existing) {
@@ -299,7 +327,9 @@ function newEvent(type, f = {}) {
 }
 function buildState(masters, events) {
   const items = {}, carts = {};
-  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '', origin: '', reissue: '', attached: false, mergedTo: '' });
+  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '', origin: '', reissue: '', attached: false, mergedTo: '', lt: {} });
+  const T = e => e.data.t || Date.parse(String(e.at).replace(' ', 'T')) || 0;
+  const typeOf = c => ((masters.locs || {})[c] || {}).type || '';
   const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
   for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '', tagHold: !!t.hold, note: t.note || '' });
   for (const c of Object.keys(masters.carts || {})) cart(c);
@@ -315,6 +345,10 @@ function buildState(masters, events) {
       if (cc) { it.cart = cc; it.direct = ''; if (e.cart) Object.assign(cart(cc), { loc: e.loc, since: e.at, by: e.device }); }
       else { it.cart = ''; it.direct = e.loc; }
       it.since = e.at; it.by = e.device; it.offPlan = e.data.offPlan || '';
+      // リードタイム: 入荷(最初の受入) / 出庫の始まり(出庫仮置きへ) / 出庫→出荷の終わり(包装済を入庫前へ)
+      if (!it.lt.recv) it.lt.recv = T(e);
+      if (!cc && typeOf(e.loc) === '出庫仮置き' && it.lt.store && !it.lt.out) it.lt.out = T(e);
+      if (!cc && typeOf(e.loc) === '入庫前' && it.status === '包装済' && it.lt.out && !it.lt.back) it.lt.back = T(e);
       if (e.data.pri && !it.pri) { it.pri = true; it.priSrc = 'タグ'; }
       it.hist.push(e);
     } else if (e.type === 'cart') {
@@ -322,15 +356,14 @@ function buildState(masters, events) {
       for (const o of orders) if (!o.done && o.cart === e.cart && o.to === e.loc) o.done = e;   // 移動の指示が終わった
       for (const it of Object.values(items)) if (it.cart === e.cart) it.hist.push(e);
     } else if (e.type === 'status') {
-      const it = item(e.tag, e), to = e.data.to;
+      const it = item(e.tag, e), to = e.data.to === '入庫済' ? '保管' : e.data.to;   // 以前の「入庫済」は「保管」
       if (to === '保留') { it.prev = it.status === '保留' ? it.prev : it.status; it.status = '保留'; it.hold = e.data.reason || ''; }
       else if (to === '解除') { it.status = it.prev || '未検査'; it.hold = ''; }
       else it.status = to;
       if (it.status === '未受入') it.status = '未検査';
-      if (e.loc) {   // 検査机で検査した = 部品はその場所にある
-        const cl = it.cart ? (carts[it.cart] || {}).loc : '';
-        if (cl !== e.loc) { it.cart = ''; it.direct = e.loc; }
-      }
+      if (e.loc) { it.cart = ''; it.direct = e.loc; }   // 検査机で検査した = 台車から外れ、その場所(パレット)にある
+      if (to === '保管' && !it.lt.store) it.lt.store = T(e);
+      if (to === '出庫済' && it.lt.store && !it.lt.out) it.lt.out = T(e);
       it.since = e.at; it.by = e.device;
       it.hist.push(e);
     } else if (e.type === 'ng') {   // 計画と違う置き方を現場が検知(登録はしていない)
@@ -341,12 +374,15 @@ function buildState(masters, events) {
     } else if (e.type === 'split') {   // 出庫で分けた: 元のタグは出庫分、新しいタグは残り(その場に残す)
       const o = item(e.tag, e), d = e.data, nw = item(d.newTag, e);
       o.qty = String(d.qtyOut); o.status = '出庫済'; o.since = e.at; o.by = e.device; o.hist.push(e);
-      Object.assign(nw, { name: o.name || d.name || '', qty: String(d.qtyRest), status: '入庫済', cart: '', direct: e.loc, origin: e.tag, reissue: '分割', since: e.at, by: e.device });
+      // 分けた残り(パレットから離れる物品)は 未入庫 に戻し、計画側で扱う
+      Object.assign(nw, { name: o.name || d.name || '', qty: String(d.qtyRest), status: '未入庫', cart: '', direct: e.loc, origin: e.tag, reissue: '分割', since: e.at, by: e.device, lt: { recv: o.lt.recv } });
+      if (!o.lt.out) o.lt.out = T(e);
       nw.hist.push(e);
     } else if (e.type === 'merge') {   // 出庫でまとめた: 元のタグは使えなくなり、新しいタグ1枚に
       const d = e.data, nw = item(e.tag, e);
       for (const f of d.from || []) { const it = item(f); Object.assign(it, { status: 'まとめ済', mergedTo: e.tag, cart: '', direct: '' }); it.hist.push(e); }
-      Object.assign(nw, { name: d.name || '', qty: String(d.qty), status: '出庫済', cart: e.cart || '', direct: e.cart ? '' : e.loc, origin: (d.from || []).join('+'), reissue: 'まとめ', since: e.at, by: e.device });
+      const f0 = item((d.from || [])[0] || e.tag);
+      Object.assign(nw, { name: d.name || '', qty: String(d.qty), status: '出庫済', cart: '', direct: e.loc, origin: (d.from || []).join('+'), reissue: 'まとめ', since: e.at, by: e.device, lt: { recv: f0.lt.recv, store: f0.lt.store, out: f0.lt.out || T(e) } });
       nw.hist.push(e);
     } else if (e.type === 'attach') {   // 新しいタグを貼ったことを確認
       const it = item(e.tag, e); it.attached = true; it.hist.push(e);
@@ -365,6 +401,9 @@ function buildState(masters, events) {
     // 保留の理由(優先の逆): 保留中ならその理由、まだなら計画の保留理由
     const tagReason = it.tagHold ? (it.note || '保留タグ') : '';
     it.holdReason = it.status === '保留' ? (it.hold || tagReason || it.planHold || '理由なし') : tagReason || it.planHold || '';
+    it.next = nextPlan(it.status, p, !!it.holdReason);
+    it.lt.inbound = it.lt.recv && it.lt.store ? it.lt.store - it.lt.recv : null;   // 入荷→入庫
+    it.lt.outbound = it.lt.out && it.lt.back ? it.lt.back - it.lt.out : null;       // 出庫→出荷
   }
   return { items, carts, alerts, orders, devices };
 }

@@ -207,3 +207,13 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .cd-hold{grid-column:1/-1;font-size:13px;font-weight:800;color:#fff;background:var(--s-hold);border-radius:6px;padding:2px 8px;margin-bottom:4px;justify-self:start}
 .cand{grid-template-areas:"h h" "k tap" "v tap" "s tap"}.cd-hold{grid-area:h}
 .slot.shelfslot{background:#fff4e6;color:#3a2500;border:3px solid var(--s-hold);min-height:100px}.slot.shelfslot .sl-k{color:#8a4b06}
+/* 区分(入荷→入庫 / 出庫→出荷) */
+.sections{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px max(12px,env(safe-area-inset-left,0px)) 0}
+.sections button{min-height:54px;border:2px solid #34466a;background:#0b1424;color:#c9d4e6;border-radius:12px;font-weight:800;font-size:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.25}
+.sections button small{font-size:11.5px;font-weight:400;opacity:.85}
+.sections button.on{background:#1d5fc4;border-color:#1d5fc4;color:#fff}
+.sections button[data-sec="出庫→出荷"].on{background:#0e7490;border-color:#0e7490}
+.modes.n4{grid-template-columns:repeat(4,1fr)}.modes.n5{grid-template-columns:repeat(5,1fr)}
+.modes.n5 button{font-size:14px;padding:8px 2px}
+.slot.dest{min-height:96px}
+.sl-note{font-size:13px;color:#465467}.slot:not(.set) .sl-note{color:#c3cede}

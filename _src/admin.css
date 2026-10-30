@@ -140,3 +140,6 @@ tr.holdrow td{background:#fff8ef}.note{color:#8a4b06;margin-top:2px}
 .et-ck.et-pri{border-color:#efb1b1;color:var(--pri)}.et-ck.et-hold{border-color:#e8b36d;color:#8a4b06}
 .dlg .et-ck input{width:auto;margin:0;transform:scale(1.3)}
 @media print{.pp.hold{background:#b45309}}
+.kpis.k8{grid-template-columns:repeat(8,1fr)}.kpil small{display:block;font-weight:400;font-size:11px;color:var(--mute)}
+.kpirow{grid-template-columns:110px 1fr}.kpi div{font-size:13px}.kpi b{font-size:24px}
+.ltk{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ltk .kpi{display:grid;gap:2px}.ltk .kpi b{font-size:32px}
