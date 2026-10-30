@@ -2996,14 +2996,14 @@ let FIRSTID = '';
 function clearLocal() { EVENTS = []; FEED = []; LASTROW = 1; FIRSTID = ''; for (const o of [RECV, FRESH]) for (const k of Object.keys(o)) delete o[k]; rebuild(); }
 /* ---------------- デモのリセット ---------------- */
 async function resetDemo() {
-  let plan = false;
+  let plan = true;
   const p = dialog(`<h3 style="margin:0 0 8px">デモをリセット</h3><div class="dlg-msg">現場で登録した記録(置いた・台車の移動・検査済・保留・優先アラート)を<b>すべて消して</b>、はじめからにします。<br><span class="small mute">タグ・台車・置き場所はそのまま残ります。現場のスマホも数秒で自動的にリセットされます。</span></div>
-    <label class="row" style="margin-top:12px"><input type="checkbox" id="rs_plan" style="width:auto;margin:0"> 計画も「仮の計画」に戻す</label>`, [{ label: 'やめる' }, { label: 'リセットする', cls: 'red', ok: true }]);
+    <label class="row" style="margin-top:12px"><input type="checkbox" id="rs_plan" style="width:auto;margin:0" checked> 計画も「仮の計画」に戻す(保留タグ・備考・T0009 などもそろえる)</label>`, [{ label: 'やめる' }, { label: 'リセットする', cls: 'red', ok: true }]);
   setTimeout(() => { const c = $('rs_plan'); if (c) c.onchange = () => { plan = c.checked; }; });
   if ((await p).i !== 1) return;
   try {
     await clearRows('events');
-    if (plan) { await ensureTabs(); await clearRows('plans'); await appendRows('plans', DEMO_PLAN); }
+    if (plan) { await ensureTabs(); await clearRows('plans'); await appendRows('plans', DEMO_PLAN); MAST = await readMasters(); await seedDemo(true); }   // 計画(保留タグ・備考も)をデモの状態に
     await appendRows('events', [eventRow(newEvent('reset', { data: { plan } }))]);   // 先頭がこの行に変わる → スマホがリセットに気づく
     closeAlert(); clearLocal(); MAST = await readMasters(); await loadAll();
     toast(plan ? '登録の記録を消し、計画を仮の計画に戻しました' : '登録の記録を消しました。はじめからデモできます');
@@ -3025,7 +3025,7 @@ function render() {
     <main class="wrap" id="main">${LOADED ? (VIEWS[VIEW] || VIEWS.dash)() : '<div class="card empty">スプレッドシートを読み込んでいます…</div>'}</main>`;
   renderTop(); afterRender();
 }
-function renderLive() { if (!LOADED) return; const m = $('main'); if (!m) return; if (VIEW === 'dash') { $('live').innerHTML = dashLive(); afterRender(); } else if (VIEW === 'devices' || VIEW === 'items') { m.innerHTML = VIEWS[VIEW](); afterRender(); } }
+function renderLive() { if (!LOADED) return; const m = $('main'); if (!m) return; if (VIEW === 'dash') { if (!$('live')) return render(); $('live').innerHTML = dashLive(); afterRender(); } else if (VIEW === 'devices' || VIEW === 'items') { m.innerHTML = VIEWS[VIEW](); afterRender(); } }
 function afterRender() { document.querySelectorAll('[data-qr]').forEach(el => { if (!el.innerHTML) el.innerHTML = qrSvg(el.dataset.qr); }); }
 function renderTop() {
   const el = $('topst'); if (!el) return;
@@ -3478,7 +3478,7 @@ VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
   <section class="card"><h2>デモ用データ</h2><div class="row"><button class="btn" onclick="seedDemo()">デモ用データをそろえる(足りないものだけ追加)</button><button class="btn danger" onclick="resetDemo()">デモをリセット(登録の記録を消す)</button></div></section>`;
 
 /* ---------------- デモ用データ ---------------- */
-async function seedDemo() {
+async function seedDemo(quiet) {
   // [品番, 品名, ロット, 数量, 優先, 保留, 備考] … 優先・保留・備考は計画から入ってくるもの
   const T = [['IHF-30112-A', 'タービンブレード 1段', 'L2610-03', 12, 1, 0, '生産計画の変更で優先(11/5 組立)'], ['IHF-30113-A', 'タービンブレード 2段', 'L2610-04', 8, 0], ['IHF-41005-C', '燃料ノズル', 'J2610-21', 4, 0],
     ['IHF-52001-D', 'ベアリング No.3', 'R2610-15', 2, 1, 0, '部品不足のライン向け'], ['IHF-60340-A', 'シールリング', 'J2610-22', 30, 0], ['IHF-70015-B', '点火プラグ', 'J2610-23', 6, 0, 1, '図面改訂待ち(Rev.C)'],
@@ -3503,7 +3503,8 @@ async function seedDemo() {
     const nc = C.filter(c => !have.has(c[0])); if (nc.length) await appendRows('carts', nc);
     if (!Object.keys(MAST.plans || {}).length) await appendRows('plans', DEMO_PLAN);
 
-    MAST = await readMasters(); rebuild(); toast(`デモ用データをそろえました(追加: 部品${nt.length}・置き場所${nl.length}・台車${nc.length})`); location.hash = '#tags'; render();
+    MAST = await readMasters(); rebuild(); if (quiet) return;
+    toast(`デモ用データをそろえました(追加: 部品${nt.length}・置き場所${nl.length}・台車${nc.length}・計画の保留/備考${upd.length})`); location.hash = '#tags'; render();
   } catch (e) { toast(e.message, true); }
 }
 boot();
