@@ -2940,7 +2940,7 @@ VIEWS.dash = () => {
     <button class="btn primary big" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button>
     <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)、台車3台、置き場所9か所(検査机・保留場所・入庫前を含む)と、仮の計画を登録します。「タグ発行」「台車・置き場所」から印刷できます。</p></div>`;
   return `<div class="head"><div><h1>現場の状況</h1><div class="mute small">現場のスマホがタグを読むと、数秒でここに反映されます。</div></div>
-    <div class="row"><button class="btn" onclick="resetDemo()">デモをリセット</button><button class="btn primary big" onclick="openOrder()">移動を指示</button><button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div></div>
+    <div class="row"><button class="btn" onclick="resetDemo()">デモをリセット</button><button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div></div>
     <section class="flowcard"><div class="flow" id="flow">
       <div class="fnode dev" id="fn-dev"><div class="fn-t">現場端末</div><div id="fn-devs"></div></div>
       <div class="lane" id="lane1"><span>結果だけを送信 →</span></div>
@@ -2979,7 +2979,6 @@ function dashLive() {
   </section>
   <div class="dside">
     ${holdCard()}
-    ${ordersCard()}
     <section class="card"><div class="ch"><h2>通信モニター</h2><span class="mute small">新しい順</span></div><div class="feed">${FEED.slice(0, 16).map(feedRow).join('') || '<div class="mute small">まだ受信していません</div>'}</div></section>
     <section class="card"><div class="ch"><h2>優先品の所在</h2><span class="mute small">${pris.length} 件</span></div>
       ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${placed(i) && !priOK(i) ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${placed(i) ? esc(whereOf(i)) : '<span class="mute">未記録</span>'}${placed(i) && !priOK(i) ? '<div class="small" style="color:var(--pri)">優先台車・優先置き場ではない</div>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}

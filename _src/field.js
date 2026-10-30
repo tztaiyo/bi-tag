@@ -237,7 +237,7 @@ function renderPair() {
   $('slotD').innerHTML = D ? `<div class="sl-k">自分の机(検査する場所)</div><div class="sl-row"><span class="sl-v mono">${esc(D.code)}</span><span class="sl-s">${esc(D.type)} ${esc(D.name || '')}</span></div><button class="unfix" onclick="clearDesk()">✕ 机を解除</button>`
     : `<div class="sl-k">自分の机(検査する場所)</div><div class="sl-e">机の場所タグを読んでください</div>`;
   document.querySelectorAll('.results button').forEach(b => b.classList.toggle('on', b.dataset.res === F.result));
-  renderAct(); hint();
+  renderAct(); hint(); renderRoutine();
 }
 function renderAct() {   // 手動登録のときの「登録する」ボタン
   const el = $('act'); if (!el) return;
@@ -393,7 +393,43 @@ function stockIn(P) {
   beep('link'); flash('ok'); say('入庫しました');
   msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>入庫済</b> にしました`, 'ok');
 }
-/* ---------------- 管理からの移動の指示 ---------------- */
+/* ---------------- 次の作業(いつもの流れ) ----------------
+   管理の指示は使わず、台車の中身から次の移動をスマホに出すだけ:
+   未検査の部品が載った台車 → 検査机へ / 検査が終わった台車 → 入庫前へ */
+const locType = c => (MAST.locs[c] || {}).type || '';
+function routineTasks() {
+  const carts = {};
+  for (const [tag, p] of Object.entries(PLACED)) if (p.cart) (carts[p.cart] = carts[p.cart] || []).push(tag);
+  const tasks = [];
+  for (const [c, tags] of Object.entries(carts)) {
+    const st = tags.map(statusOf), at = CARTLOC[c] || '', n = s => st.filter(x => x === s).length;
+    if (n('未検査') && locType(at) !== '検査机') tasks.push({ cart: c, at, kind: '検査机', count: n('未検査'), label: '未検査', dest: locsOfType('検査机') });
+    else if (!n('未検査') && n('検査済') && locType(at) !== '入庫前') tasks.push({ cart: c, at, kind: '入庫前', count: n('検査済'), label: '検査済', dest: locsOfType('入庫前') });
+  }
+  return tasks;
+}
+function renderRoutine() {
+  const el = $('orderbar'); if (!el) return;
+  const ts = routineTasks();
+  if (!ts.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const mine = ts.find(t => F.cart && F.cart.code === t.cart);
+  const list = (mine ? [mine, ...ts.filter(t => t !== mine)] : ts).slice(0, 2);
+  el.innerHTML = `<div class="rt"><div class="od-t">次の作業(いつもの流れ)${ts.length > 2 ? ` ・ ほか${ts.length - 2}台` : ''}</div>${list.map(t => {
+    const now = F.cart && F.cart.code === t.cart && F.mode === '置く';
+    return `<div class="rt-r ${now ? 'now' : ''}"><div class="rt-b">台車 <b>${esc(t.cart)}</b>${t.at ? `(いま ${esc(t.at)})` : ''} ${t.label} <b>${t.count}点</b><br>→ <b>${t.kind}</b> ${esc(t.dest.join('・'))} へ</div>
+      ${now ? `<div class="rt-s">運んだら、${t.kind}の場所タグを読む</div>` : `<button class="btn od-go" onclick="carryCart('${esc(t.cart)}','${t.kind}')">運ぶ</button>`}</div>`; }).join('')}</div>`;
+}
+function carryCart(c, kind) {   // 運ぶ台車を固定して、行き先の場所タグを待つ
+  setMode('置く'); closeSheet();
+  const m = MAST.carts[c] || {};
+  F.cart = { code: c, name: m.name || '', pz: !!m.pz }; F.loc = null; F.part = null; F.moveCand = false;
+  renderPair();
+  msg(`台車 <b>${esc(c)}</b> を固定しました。${kind}へ運んだら、その場所タグを読んでください`, 'ok');
+  say(`台車 ${spell(c)} を、${kind}へ運んで、場所のタグを読んでください`);
+}
+
+/* ---------------- 管理からの移動の指示(いまは使っていない) ---------------- */
 function openOrders() { return Object.values(ORDERS).filter(o => !o.done && Date.now() - (o.e.data.t || 0) < 12 * 3600e3).sort((a, b) => (a.e.data.t || 0) - (b.e.data.t || 0)); }
 function renderOrders() {
   const el = $('orderbar'); if (!el) return;
@@ -599,7 +635,6 @@ async function poll(first) {
       const e = rowEvent(r, LASTROW + 1 + i);
       const isNewOrder = e.type === 'order' && !ORDERS[e.id] && !first;
       applyEv(e);
-      if (isNewOrder) newOrder(ORDERS[e.id]);
       if (e.type === 'alert') {
         ALERT_PRI[e.part] = true;
         const fresh = !ACKED.has(e.id) && e.device !== DEVICE.name && (Date.now() - (e.data.t || 0) < 30 * 60 * 1000);
@@ -607,7 +642,7 @@ async function poll(first) {
       }
       if (e.type === 'ack' && e.device === DEVICE.name) ACKED.add(e.data.alert);
     });
-    LASTROW += rows.length; renderPair(); renderOrders();
+    LASTROW += rows.length; renderPair();
   } catch (e) { }
   renderNet();
 }
@@ -616,7 +651,7 @@ let FIRSTID = '';
 function demoReset() {
   const t0 = Date.now();
   for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI, HOLDR, ORDERS]) for (const k of Object.keys(o)) delete o[k];
-  F.desk = null; F.holdPending = null; F.inspWait = null; renderOrders(); PREV_HOLD = null;
+  F.desk = null; F.holdPending = null; F.inspWait = null; renderRoutine(); PREV_HOLD = null;
   APPLIED.clear(); LASTROW = 1; RECENT = []; ALERTQ.length = 0; renderAlert();
   OUTBOX = OUTBOX.filter(e => e.type === 'hello' ? false : (e.data.t || 0) > t0); lsSet('bi_outbox', JSON.stringify(OUTBOX));
   Object.assign(F, { part: null, cart: null, loc: null, moveCand: false }); CAND = null; renderCand();
