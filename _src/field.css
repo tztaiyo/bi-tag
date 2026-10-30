@@ -206,3 +206,4 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .cand.held{box-shadow:0 0 0 3px var(--s-hold),0 6px 20px rgba(0,0,0,.45)}
 .cd-hold{grid-column:1/-1;font-size:13px;font-weight:800;color:#fff;background:var(--s-hold);border-radius:6px;padding:2px 8px;margin-bottom:4px;justify-self:start}
 .cand{grid-template-areas:"h h" "k tap" "v tap" "s tap"}.cd-hold{grid-area:h}
+.slot.shelfslot{background:#fff4e6;color:#3a2500;border:3px solid var(--s-hold);min-height:100px}.slot.shelfslot .sl-k{color:#8a4b06}

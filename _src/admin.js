@@ -114,6 +114,7 @@ function renderTop() {
   el.innerHTML = `<i class="dot ${s[0]}"></i>${s[1]}${!tokenValid() ? ' <button class="btn" onclick="login()">ログイン</button>' : ''}`;
 }
 const stH = s => `<span class="st st-${s}">${s}</span>`;
+const holdH = it => it.holdReason ? `<span class="pri holdb" title="${esc(it.holdReason)}">保留${it.tagHold ? '(タグ)' : ''}</span>` : '';
 const priH = it => it.pri ? `<span class="pri ${it.priSrc === 'アラート' ? 'alert' : ''}">優先${it.priSrc === 'アラート' ? '(アラート)' : ''}</span>` : '';
 const locName = c => { const l = MAST.locs[c]; return l ? `${l.type} ${c}` : c; };
 const cartOf = c => ST.carts[c] || { code: c, name: '', pz: false, loc: '' };
@@ -251,13 +252,37 @@ function closeAlert() { const d = $('almodal'); if (d) d.remove(); ALERT_UI = nu
 /* ---------------- 部品一覧・履歴 ---------------- */
 VIEWS.items = () => {
   const items = Object.values(ST.items).sort((a, b) => (b.pri - a.pri) || String(b.since).localeCompare(String(a.since)));
-  return `<div class="head"><h1>部品一覧</h1><span class="mute small">${items.length} 件</span></div>
+  return `<div class="head"><div><h1>部品一覧</h1><div class="mute small">「優先・保留・備考」で、タグごとに優先・保留(優先の逆)と備考(保留理由)を設定できます。保留にすると現場のスマホにすぐ知らせ、次に印刷するタグにも保留の印が入ります。</div></div><span class="mute small">${items.length} 件</span></div>
   <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>台車</th><th>置き場所</th><th>計画</th><th>最終更新</th><th></th></tr></thead><tbody>
-  ${items.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td class="mono">${esc(i.tag)}</td><td><b class="mono">${esc(i.part)}</b> ${priH(i)}</td><td>${esc(i.name)}</td><td class="mono">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
+  ${items.filter(i => i.status !== 'まとめ済' || true).map(i => `<tr class="${i.pri ? 'prirow' : ''} ${i.holdReason ? 'holdrow' : ''}"><td class="mono">${esc(i.tag)}</td><td><b class="mono">${esc(i.part)}</b> ${priH(i)} ${holdH(i)}</td><td>${esc(i.name)}${i.note || i.holdReason ? `<div class="small note">${i.holdReason ? `<b>保留理由:</b> ${esc(i.holdReason)}` : ''}${i.note && i.note !== i.holdReason ? `<div>備考: ${esc(i.note)}</div>` : ''}</div>` : ''}</td><td class="mono">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
     <td>${stH(i.status)}${i.mergedTo ? `<div class="small mute">→ ${esc(i.mergedTo)}</div>` : ''}${i.reissue ? `<div class="small mute">${i.reissue === '分割' ? '分割' : 'まとめ'}: ${esc(i.origin)}</div>` : ''}${i.hold ? `<div class="small mute">${esc(i.hold)}</div>` : i.planHold && i.status !== '保留' ? `<div class="small" style="color:var(--s-hold)">計画で保留: ${esc(i.planHold)}</div>` : ''}</td><td class="mono">${i.cart ? `<b>${esc(i.cart)}</b>${cartOf(i.cart).pz ? ' <span class="pri">優先</span>' : ''}` : '<span class="mute">-</span>'}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}</td><td class="small">${planH(planOf(i))}${offPlan(i).length ? '<div style="color:var(--pri);font-weight:700">✗ 計画と違う</div>' : planOf(i) && placed(i) ? '<div style="color:var(--ok)">✓ 計画どおり</div>' : ''}</td><td class="small">${esc(i.since ? hms(i.since) + ' ' + i.by : '')}</td>
-    <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button>${i.status === '保留' ? ` <button class="btn" onclick="release('${esc(i.tag)}')">保留を解除</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">まだありません</td></tr>'}
+    <td><button class="btn" onclick="editTag('${esc(i.tag)}')">優先・保留・備考</button> <button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button>${i.status === '保留' ? ` <button class="btn" onclick="release('${esc(i.tag)}')">保留を解除</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">まだありません</td></tr>'}
   </tbody></table></div>`;
 };
+// タグの 優先・保留・備考 を直す(タグ表に直した行を足す。同じタグは下の行が使われる)
+async function editTag(tag) {
+  const i = ST.items[tag]; if (!i) return;
+  const t = MAST.tags[tag] || { tag, part: i.part, name: i.name, lot: i.lot, qty: i.qty, pri: i.pri, issued: now() };
+  const st = { pri: !!t.pri, hold: !!t.hold, note: t.note || '' };
+  const p = dialog(`<div class="hd-top">${esc(i.part)}(${esc(tag)})</div><div class="small mute">${esc(i.name)} ・ ロット ${esc(i.lot)} ・ いま ${esc(i.status)}</div>
+    <div class="et-row"><label class="et-ck et-pri"><input type="checkbox" id="et_pri" ${st.pri ? 'checked' : ''}> 優先タグ</label><label class="et-ck et-hold"><input type="checkbox" id="et_hold" ${st.hold ? 'checked' : ''}> 保留タグ(検査しないで保留棚へ)</label></div>
+    <label class="hd-l">備考(保留タグのときは、これが保留理由になります)<textarea id="et_note" rows="3" style="width:100%;font:inherit;border:1px solid #c7cdd6;border-radius:8px;padding:8px">${esc(st.note)}</textarea></label>
+    <div class="hd-chips">${HOLD_REASONS_PC.map(r => `<button class="btn" onclick="document.getElementById('et_note').value=this.textContent;document.getElementById('et_hold').checked=true">${esc(r)}</button>`).join('')}</div>`,
+    [{ label: 'やめる' }, { label: '保存して現場に知らせる', cls: 'primary', ok: true }]);
+  setTimeout(() => { const a = $('et_pri'), b = $('et_hold'), c = $('et_note');
+    if (a) a.onchange = () => st.pri = a.checked; if (b) b.onchange = () => st.hold = b.checked; if (c) c.oninput = () => st.note = c.value;
+    document.querySelectorAll('.hd-chips .btn').forEach(x => x.addEventListener('click', () => { st.note = x.textContent; st.hold = true; })); });
+  if ((await p).i !== 1) return;
+  try {
+    await ensureTabs();
+    const nt = { ...t, pri: st.pri, hold: st.hold, note: st.note.trim() };
+    await appendRows('tags', [tagRow(nt)]);
+    MAST = await readMasters();
+    if (st.hold && !t.hold && i.status !== '保留') await post(newEvent('holdalert', { tag, part: i.part, data: { reason: nt.note || '保留タグ', name: i.name, by: 'tag' } }));
+    if (st.pri && !t.pri) await post(newEvent('alert', { tag, part: i.part, data: { name: i.name, where: whereOf(i), msg: '優先に変更' } }));
+    rebuild(); render(); toast('保存しました(現場のスマホには数秒で届きます)');
+  } catch (e) { toast(e.message, true); }
+}
 function showItem(tag) {
   const i = ST.items[tag]; if (!i) return;
   dialog(`<h3 style="margin:0 0 6px"><span class="mono">${esc(i.part)}</span> ${priH(i)} ${stH(i.status)}</h3><div class="small mute">タグ ${esc(i.tag)} ・ ${esc(i.name)} ・ ロット ${esc(i.lot)} ・ 数量 ${esc(i.qty)}</div>
@@ -274,10 +299,10 @@ VIEWS.tags = () => {
   <div class="card sect noprint"><h2>新しく発行する</h2><div class="row">
     <input type="text" id="t_part" placeholder="品番" list="partl" style="width:160px"><datalist id="partl">${parts.map(p => `<option value="${esc(p)}">`).join('')}</datalist>
     <input type="text" id="t_name" placeholder="品名" style="width:180px"><input type="text" id="t_lot" placeholder="ロット" style="width:120px">
-    <input type="number" id="t_qty" placeholder="数量" style="width:80px"><label class="row"><input type="checkbox" id="t_pri"> 優先</label>
+    <input type="number" id="t_qty" placeholder="数量" style="width:80px"><label class="row"><input type="checkbox" id="t_pri"> 優先</label><label class="row" style="color:var(--s-hold);font-weight:700"><input type="checkbox" id="t_hold"> 保留</label><input type="text" id="t_note" placeholder="備考(保留理由)" style="width:180px">
     <input type="number" id="t_n" value="1" min="1" max="50" style="width:70px"> 枚 <button class="btn primary" onclick="issueTags()">発行</button></div></div>
-  <div class="card flush"><table class="tbl"><thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('.tsel').forEach(c=>c.checked=this.checked)"></th><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>優先</th><th>状態</th><th>発行</th></tr></thead><tbody>
-  ${tags.map(t => { const i = ST.items[t.tag] || {}; return `<tr><td><input type="checkbox" class="tsel" value="${esc(t.tag)}" checked></td><td class="mono">${esc(t.tag)}</td><td class="mono">${esc(t.part)}</td><td>${esc(t.name)}</td><td class="mono">${esc(t.lot)}</td><td>${esc(i.qty || t.qty)}${i.qty && i.qty !== t.qty ? `<span class="small mute">(発行時 ${esc(t.qty)})</span>` : ''}</td><td>${t.pri ? '<span class="pri">優先</span>' : ''}</td><td>${i.status ? stH(i.status) : ''}</td><td class="small">${esc(t.issued)}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">まだありません</td></tr>'}
+  <div class="card flush"><table class="tbl"><thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('.tsel').forEach(c=>c.checked=this.checked)"></th><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>優先・保留</th><th>状態</th><th>発行</th></tr></thead><tbody>
+  ${tags.map(t => { const i = ST.items[t.tag] || {}; return `<tr><td><input type="checkbox" class="tsel" value="${esc(t.tag)}" checked></td><td class="mono">${esc(t.tag)}</td><td class="mono">${esc(t.part)}</td><td>${esc(t.name)}</td><td class="mono">${esc(t.lot)}</td><td>${esc(i.qty || t.qty)}${i.qty && i.qty !== t.qty ? `<span class="small mute">(発行時 ${esc(t.qty)})</span>` : ''}</td><td>${t.pri ? '<span class="pri">優先</span>' : ''} ${t.hold ? `<span class="pri holdb">保留</span><div class="small note">${esc(t.note)}</div>` : ''}</td><td>${i.status ? stH(i.status) : ''}</td><td class="small">${esc(t.issued)}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">まだありません</td></tr>'}
   </tbody></table></div>
   ${reissued().length ? `<div class="head" style="margin-top:22px"><div><h2 style="margin:0">出庫で発行した新しいタグ</h2><div class="mute small">一部だけ出庫したときの残り・まとめて出庫したものに、現場のスマホが発行したタグです。印刷して貼り、現場で読むと「貼付済」になります。</div></div>
     <div class="row"><button class="btn" onclick="printReissued(true)">すべて印刷</button><button class="btn primary" onclick="printReissued()">未貼付だけ印刷</button></div></div>
@@ -289,13 +314,13 @@ async function issueTags() {
   const part = $('t_part').value.trim().toUpperCase(); if (!part) return toast('品番を入れてください', true);
   const n = Math.max(1, Math.min(50, +$('t_n').value || 1));
   let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +((k.match(/^T(\d+)$/) || [])[1] || 0)));
-  const rows = []; for (let i = 0; i < n; i++) { max++; rows.push([`T${pad(max, 4)}`, part, $('t_name').value.trim(), $('t_lot').value.trim().toUpperCase(), $('t_qty').value, $('t_pri').checked ? '優先' : '', now()]); }
+  const rows = []; for (let i = 0; i < n; i++) { max++; rows.push(tagRow({ tag: `T${pad(max, 4)}`, part, name: $('t_name').value.trim(), lot: $('t_lot').value.trim().toUpperCase(), qty: $('t_qty').value, pri: $('t_pri').checked, hold: $('t_hold').checked, note: $('t_note').value.trim() })); }
   try { await appendRows('tags', rows); MAST = await readMasters(); rebuild(); toast(`${n} 枚発行しました`); render(); } catch (e) { toast(e.message, true); }
 }
 function printTags() {
   const sel = [...document.querySelectorAll('.tsel:checked')].map(c => c.value);
   const list = sel.map(t => MAST.tags[t]).filter(Boolean);
-  printSheet(list.map(t => `<div class="ptag ${t.pri ? 'p' : ''}"><div data-qr="${esc(partQR(t))}" class="pq"></div><div class="pt"><div class="pk">部品タグ ${esc(t.tag)}</div><div class="pn mono">${esc(t.part)}</div><div class="pm">${esc(t.name)}</div><div class="pl">LOT ${esc(t.lot)} ・ ${esc(t.qty)}</div>${t.pri ? '<div class="pp">優先</div>' : ''}</div></div>`));
+  printSheet(list.map(t => `<div class="ptag ${t.pri ? 'p' : ''}"><div data-qr="${esc(partQR(t))}" class="pq"></div><div class="pt"><div class="pk">部品タグ ${esc(t.tag)}</div><div class="pn mono">${esc(t.part)}</div><div class="pm">${esc(t.name)}</div><div class="pl">LOT ${esc(t.lot)} ・ ${esc(t.qty)}</div>${t.pri ? '<div class="pp">優先</div>' : ''}${t.hold ? `<div class="pp hold">保留 ${esc(t.note)}</div>` : ''}</div></div>`));
 }
 function printSheet(cards) {
   const w = document.createElement('div'); w.className = 'printarea'; w.innerHTML = cards.join('');

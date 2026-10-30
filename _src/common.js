@@ -155,7 +155,7 @@ async function gapi(path, opt = {}) {
 }
 const TABS = {
   events: { title: 'イベント', cols: ['ID', '日時', '端末', 'アカウント', '種類', 'タグ', '品番', 'ロット', '場所', '内容', '台車'] },
-  tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時'] },
+  tags: { title: 'タグ', cols: ['タグ', '品番', '品名', 'ロット', '数量', '優先', '発行日時', '保留', '備考'] },
   locs: { title: '置き場所', cols: ['コード', '種別', '名称', '優先置き場'] },
   carts: { title: '台車', cols: ['台車番号', '名称', '優先台車'] },
   plans: { title: '計画', cols: ['品番', '台車', '置き場所', 'メモ', '保留理由'] },
@@ -208,7 +208,7 @@ async function readMasters(retry = true) {
   });
   (cv || []).filter(r => r[0]).forEach(r => { carts[r[0]] = { code: r[0], name: r[1] || '', pz: r[2] === '○' }; });
   return {
-    tags: Object.fromEntries((tv || []).filter(r => r[0]).map(r => [r[0], { tag: r[0], part: r[1] || '', name: r[2] || '', lot: r[3] || '', qty: r[4] || '', pri: r[5] === '優先', issued: r[6] || '' }])),
+    tags: Object.fromEntries((tv || []).filter(r => r[0]).map(r => [r[0], { tag: r[0], part: r[1] || '', name: r[2] || '', lot: r[3] || '', qty: r[4] || '', pri: r[5] === '優先', issued: r[6] || '', hold: r[7] === '保留', note: r[8] || '' }])),   // 同じタグの行が複数あれば、下の行(あとで直したもの)を使う
     locs, carts, plans,
   };
 }
@@ -245,13 +245,15 @@ function parseTag(text) {
   const s = String(text || '').trim();
   const m = s.match(/^BI-([TLCH]);(.*)$/); if (!m) return null;
   const f = Object.fromEntries(m[2].split(';').map(p => { const i = p.indexOf('='); return [p.slice(0, i), p.slice(i + 1)]; }));
-  if (m[1] === 'T') return f.ID ? { kind: 'part', tag: f.ID, part: f.PN || '', lot: f.LOT || '', qty: f.Q || '', pri: f.P === '1' } : null;
+  if (m[1] === 'T') return f.ID ? { kind: 'part', tag: f.ID, part: f.PN || '', lot: f.LOT || '', qty: f.Q || '', pri: f.P === '1', hold: f.H === '1' } : null;
   // 保留棚タグ: 台車とは関係なく、決まった場所にある棚(以前の場所タグ K=HOLD も保留棚として読む)
   if (m[1] === 'H' || f.K === 'HOLD') return f.ID ? { kind: 'shelf', code: f.ID, type: '保留場所' } : null;
   if (m[1] === 'C' || f.K === 'CART') return f.ID ? { kind: 'cart', code: f.ID, pz: f.PZ === '1' } : null;   // 以前の台車タグ(BI-L;K=CART)も台車として読む
   return f.ID ? { kind: 'loc', code: f.ID, type: LOC_KIND[f.K] || f.K || '', pz: f.PZ === '1' } : null;
 }
-const partQR = t => `BI-T;ID=${t.tag};PN=${t.part};LOT=${t.lot};Q=${t.qty};P=${t.pri ? 1 : 0}`;
+// H=1 は「保留タグ」(優先の逆)。タグだけで保留と分かるので、電波がなくても判定できる
+const partQR = t => `BI-T;ID=${t.tag};PN=${t.part};LOT=${t.lot};Q=${t.qty};P=${t.pri ? 1 : 0}${t.hold ? ';H=1' : ''}`;
+const tagRow = t => [t.tag, t.part, t.name || '', t.lot || '', String(t.qty ?? ''), t.pri ? '優先' : '', t.issued || now(), t.hold ? '保留' : '', t.note || ''];
 const locQR = l => `BI-L;ID=${l.code};K=${KIND_OF[l.type] || 'AREA'};PZ=${l.pz ? 1 : 0}`;
 const cartQR = c => `BI-C;ID=${c.code};PZ=${c.pz ? 1 : 0}`;
 const shelfQR = l => `BI-H;ID=${l.code}`;
@@ -299,7 +301,7 @@ function buildState(masters, events) {
   const items = {}, carts = {};
   const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '', origin: '', reissue: '', attached: false, mergedTo: '' });
   const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
-  for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
+  for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '', tagHold: !!t.hold, note: t.note || '' });
   for (const c of Object.keys(masters.carts || {})) cart(c);
   const alerts = [], orders = [], devices = {};
   for (const e of events) {
@@ -361,7 +363,8 @@ function buildState(masters, events) {
     it.status = deriveStatus(it.status, ((masters.locs || {})[it.loc] || {}).type || '');   // 場所で決まるステータス
     const p = (masters.plans || {})[it.part]; it.planHold = p ? p.hold : '';
     // 保留の理由(優先の逆): 保留中ならその理由、まだなら計画の保留理由
-    it.holdReason = it.status === '保留' ? (it.hold || it.planHold || '') : it.planHold || '';
+    const tagReason = it.tagHold ? (it.note || '保留タグ') : '';
+    it.holdReason = it.status === '保留' ? (it.hold || tagReason || it.planHold || '理由なし') : tagReason || it.planHold || '';
   }
   return { items, carts, alerts, orders, devices };
 }

@@ -7,7 +7,7 @@
    ===================================================================== */
 // 画面の名前と内部の名前: 受入(台車に載せる・置く) / 検査(検査机で検査済・保留) / 入庫(入庫前→入庫済)
 const MODES = [['置く', '受入'], ['検査', '検査'], ['入庫', '入庫'], ['出庫', '出庫'], ['補用', '補用検査'], ['包装', '包装']];
-const F = { merge: null, attachWait: null, desk: null, result: '検査済', holdPending: null, inspWait: null, mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
+const F = { shelf: null, shelfAsk: null, merge: null, attachWait: null, desk: null, result: '検査済', holdPending: null, inspWait: null, mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
 let MAST = { tags: {}, locs: {}, carts: {} };
 let OUTBOX = [];            // 送信待ちのイベント
 let RECENT = [];            // 画面に出す最近の操作 { ev, state: sending|sent|queued, ms }
@@ -141,6 +141,7 @@ function renderShell() {
     <div class="slot wide" id="slotP"></div>
     <div class="pair2" id="pair2"><div class="slot cart" id="slotC"></div><div class="arrow" id="arrow">→</div><div class="slot loc" id="slotL"></div></div>
     <div class="slot loc desk" id="slotD" hidden></div>
+    <div class="slot shelfslot" id="slotS" hidden></div>
   </section>
   <div class="act" id="act" hidden></div>
   <div class="msg" id="msg"></div>
@@ -226,7 +227,7 @@ function nextStep() {   // いま何をかざせばよいか
   return '① 部品のタグをかざしてください';
 }
 function hint() {
-  const t = F.mode === '置く' ? nextStep()
+  const t = F.mode === '置く' && F.shelf ? `保留棚 ${F.shelf.code} に置く部品のタグを読んでください` : F.mode === '置く' ? nextStep()
     : F.mode === '検査' ? (F.holdPending ? `保留品を保留場所に置いて、保留場所のタグを読んでください` : !F.desk ? '自分の机の場所タグを読んでください'
       : `${F.desk.code} で検査した部品のタグを読んでください(結果: ${F.result}${F.result === '保留' ? '・' + F.reason : ''})`)
     : F.mode === '入庫' ? '入庫前の置き場所にある部品のタグを読んでください'
@@ -268,6 +269,9 @@ function renderPair() {
   $('slotL').className = 'slot loc' + (L ? ' set' : '') + (L && L.pz ? ' pz' : '') + (put && want === 'L' ? ' want' : '') + (bad('置き場所') ? ' bad' : '');
   $('slotL').innerHTML = L ? `<div class="sl-k">③ 置き場所</div><div class="sl-v mono">${esc(L.code)}</div><div class="sl-s">${esc(L.type)} ${esc(L.name || '')}</div>${L.pz ? '<span class="pri">優先置き場</span>' : ''}${planLine('置き場所')}<button class="unfix" onclick="clearLoc()">✕ 置き場所を解除</button>`
     : `<div class="sl-k">③ 置き場所</div><div class="sl-e">場所タグ</div>`;
+  const S = F.shelf, onShelf = put && !!S;
+  $('slotS').hidden = !onShelf; $('pair2').hidden = !put || onShelf;
+  if (S) $('slotS').innerHTML = `<div class="sl-k">保留棚(台車・置き場所は使わない)</div><div class="sl-row"><span class="sl-v mono">${esc(S.code)}</span><span class="sl-s">${esc(S.name || '保留棚')}</span></div><div class="sl-s">部品を読むと、この保留棚に登録します</div><button class="unfix" onclick="clearShelf()">✕ 保留棚を解除</button>`;
   const D = F.desk;
   $('slotD').className = 'slot loc desk' + (D ? ' set' : ' want');
   $('slotD').innerHTML = D ? `<div class="sl-k">自分の机(検査する場所)</div><div class="sl-row"><span class="sl-v mono">${esc(D.code)}</span><span class="sl-s">${esc(D.type)} ${esc(D.name || '')}</span></div><button class="unfix" onclick="clearDesk()">✕ 机を解除</button>`
@@ -295,6 +299,7 @@ function onCode(text, src = 'cam') {
   SEEN[text] = nowT;
   const t = parseTag(text);
   if (!t) { beep('ng'); flash('ng'); return msg(`このアプリのタグではありません <span class="mono small">${esc(text.slice(0, 40))}</span>`, 'ng'); }
+  if (t.kind === 'cart' || t.kind === 'loc') F.shelf = null;   // 台車・場所を読んだら、保留棚の固定はやめる
   if (t.kind === 'cart') {
     const m = MAST.carts[t.code] || {};
     if (F.mode !== '置く') setMode('置く');
@@ -303,9 +308,9 @@ function onCode(text, src = 'cam') {
     msg(`台車を <b>${esc(F.cart.code)}</b> に固定しました`); say('台車 ' + spell(F.cart.code));
     return step();
   }
-  if (t.kind === 'shelf') {   // 保留棚: 保留品を置くところ。保留品を待っていなければ、棚の中身を見せる
-    const m = MAST.locs[t.code] || {}, L = { code: t.code, type: '保留場所', name: m.name || '' };
-    return F.holdPending ? placeHold(L) : showShelf(L);
+  if (t.kind === 'shelf') {   // 保留棚: 「部品 + 保留棚」の2つで登録(台車・置き場所はいらない)
+    const m = MAST.locs[t.code] || {};
+    return shelfScan({ code: t.code, type: '保留場所', name: m.name || '' });
   }
   if (t.kind === 'loc' && F.mode === '検査') return inspLoc(t);
   if (t.kind === 'loc') {
@@ -322,6 +327,7 @@ function onCode(text, src = 'cam') {
   }
   // 部品タグ
   const P = { ...t };
+  LASTPART = { P, t: Date.now() };
   // カメラに同じ部品タグが映り続けているだけ(台車・置き場所も変わっていない)なら、もう一度は処理しない
   if (src === 'cam' && F.part && F.part.done && F.part.tag === P.tag && F.part.ctx === ctx()) return;
   const pri = isPriPart(P);
@@ -341,10 +347,12 @@ function onCode(text, src = 'cam') {
   if (F.mode === '包装') return pack(P);
   F.part = P; F.moveCand = false;
   // 二重読み取り(登録済みの部品)がいちばん優先。優先品・計画のチェックより先に知らせる
-  // 計画で保留の部品: 検査しないで保留棚へ(台車には載せない)
-  const planHold = ((MAST.plans || {})[P.part] || {}).hold;
-  if (planHold && statusOf(P.tag) !== '保留') return holdOrder(P, planHold);
-  if (planHold && statusOf(P.tag) === '保留' && (MAST.locs[locOf(P.tag)] || {}).type === '保留場所') return dupSheet(P, 'すでに保留棚にあります', `検査しない部品です(理由: ${esc(planHold)})。今回は記録していません。`);
+  // 保留棚を固定しているとき: 部品を読むだけで保留棚へ
+  if (F.shelf) return putOnShelf(P, F.shelf);
+  // 保留タグ・計画で保留の部品: 検査しないで保留棚へ(台車には載せない)
+  const needH = needHold(P);
+  if (needH && statusOf(P.tag) !== '保留') return holdOrder(P, needH);
+  if (needH && statusOf(P.tag) === '保留' && locType(locOf(P.tag)) === '保留場所') return dupSheet(P, 'すでに保留棚にあります', `検査しない部品です(理由: ${esc(holdReasonOf(P))})。今回は記録していません。`);
   if (PLACED[P.tag]) return dupStop(PLACED[P.tag]);
   if (pri) {   // 優先品: すぐに知らせる
     beep('pri'); flash('pri');
@@ -362,7 +370,7 @@ function onCode(text, src = 'cam') {
 function inspLoc(t) {
   const m = MAST.locs[t.code] || {};
   const L = { code: t.code, type: m.type || t.type, name: m.name || '' };
-  if (F.holdPending && L.type === '保留場所') return placeHold(L);
+  if (F.holdPending && L.type === '保留場所') return putOnShelf(F.holdPending, L);
   F.desk = L; beep('ok'); flash('ok'); renderPair();
   say('検査の場所 ' + spell(L.code));
   if (F.inspWait) { const P = F.inspWait; F.inspWait = null; return inspect(P); }   // 机より先に読んだ部品を、いま検査する
@@ -381,10 +389,10 @@ function stopSheet(P, title, rows, note, speech) {   // 進めない理由を大
   say(speech || title); msg(`✕ <b>${esc(title)}</b>(記録していません)`, 'ng');
 }
 function inspect(P) {
-  const st = statusOf(P.tag), planHold = ((MAST.plans || {})[P.part] || {}).hold;
-  if (planHold) {   // 計画で保留 = 検査しない部品
+  const st = statusOf(P.tag), planHold = needHold(P);
+  if (planHold) {   // 保留タグ・計画で保留 = 検査しない部品
     if (st !== '保留') return holdOrder(P, planHold);
-    return stopSheet(P, 'この部品は検査しません', [['保留の理由', esc(planHold), 'warn'], ['いまの場所', esc(whereNow(PLACED[P.tag]) || '-')]], '計画で保留になっている部品です。保留棚に置いたままにしてください。', 'この部品は検査しません。保留品です');
+    return stopSheet(P, 'この部品は検査しません', [['保留の理由', esc(holdReasonOf(P)), 'warn'], ['いまの場所', esc(whereNow(PLACED[P.tag]) || '-')]], '保留になっている部品です。保留棚に置いたままにしてください。', 'この部品は検査しません。保留品です');
   }
   const to = F.result, reason = to === '保留' ? F.reason : '';
   if (st === '未受入') return stopSheet(P, 'まだ受入されていません', [['いまの状態', '未受入', 'bad']], '先に「受入」で台車に載せてください。', 'まだ受入されていません。先に受入をしてください');
@@ -418,22 +426,47 @@ function holdOrder(P, reason) {
   const hl = locsOfType('保留場所');
   beep('pri'); flash('pri');
   sheet('hold', '!', '検査しないで、保留棚へ', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['理由', esc(reason), 'warn'], ['置く場所', esc(hl.join('・') || '保留棚'), 'ok']],
-    `計画で<b>保留</b>になっている部品です。<b>台車には載せず</b>、保留棚に置いて<b>保留棚のタグ</b>を読んでください。`, '', 15000);
+    `<b>保留</b>の部品です。<b>台車には載せず</b>、保留棚に置いて<b>保留棚のタグ</b>を読んでください。`, '', 15000);
   say(`この部品は、検査しないで、保留棚に入れてください。理由は、${reason}`);
   msg(`! <b class="mono">${esc(P.part)}</b>: <b>検査しないで保留棚へ</b>(${esc(reason)})。保留棚のタグを読んでください`, 'warn');
 }
-function placeHold(L) {   // 保留品を保留場所に置いた
-  const P = F.holdPending; F.holdPending = null;
-  send(newEvent('place', { tag: P.tag, part: P.part, lot: P.lot, loc: L.code, cart: '', data: { hold: true } }));
+/* ---------------- 保留棚(決まった場所の棚): 「部品 + 保留棚」の2つで登録 ----------------
+   ・部品を読んでから保留棚を読む → その部品を保留棚へ(どのモードでも)
+   ・保留棚を先に読む → 棚を固定。続けて読んだ部品を保留棚へ(台車・置き場所を読むと固定をやめる)
+   ・理由が分からないとき(保留タグ・計画・現場の保留のどれでもない)は、理由を選んでもらう */
+let LASTPART = null;
+function shelfScan(L) {
+  if (F.holdPending) return putOnShelf(F.holdPending, L);
+  const P = LASTPART && Date.now() - LASTPART.t < 60000 ? LASTPART.P : null;
+  if (P && !(STAT[P.tag] === '保留' && locOf(P.tag) === L.code)) return putOnShelf(P, L);
+  if (F.mode !== '置く') setMode('置く');
+  F.shelf = L; F.part = null; renderPair();
+  showShelf(L, true);
+}
+function putOnShelf(P, L, reason) {
+  if (STAT[P.tag] === '保留' && locOf(P.tag) === L.code) return dupSheet(P, `すでに保留棚 ${L.code} にあります`);
+  const r = reason || holdReasonOf(P);
+  if (!r) {   // 理由を選ぶ(選んだら登録。選ばずに閉じれば何もしない)
+    F.shelfAsk = { P, L }; F.part = P; renderPair(); beep('dup');
+    sheet('hold', '?', '保留の理由を選んでください', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['置く保留棚', esc(L.code), 'ok']], '選ぶと保留棚に登録します。',
+      `<div class="sh-nums">${HOLD_REASONS.map(x => `<button class="btn" onclick="pickHoldReason('${esc(x)}')">${esc(x)}</button>`).join('')}</div>`);
+    return say('保留の理由を選んでください');
+  }
+  if (STAT[P.tag] !== '保留') send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '保留', reason: r, from: statusOf(P.tag), pri: isPriPart(P) } }));
+  send(newEvent('place', { tag: P.tag, part: P.part, lot: P.lot, loc: L.code, cart: '', data: { hold: true, reason: r } }));
+  F.holdPending = null; F.shelfAsk = null; LASTPART = null;
+  F.part = { ...P, done: true, ctx: ctx() };
   beep('link'); flash('ok'); closeSheet(); renderPair(); linkedFx();
   say('保留棚に置きました');
-  msg(`✓ 保留品 <b class="mono">${esc(P.part)}</b> を保留棚 <b>${esc(L.code)}</b> に置きました(理由: ${esc(holdReasonOf(P))})`, 'ok');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> を保留棚 <b>${esc(L.code)}</b> に登録しました(理由: ${esc(r)})${F.shelf ? '。続けて部品を読むと、同じ保留棚に置きます' : ''}`, 'ok');
 }
+function pickHoldReason(r) { const a = F.shelfAsk; if (!a) return; closeSheet(); putOnShelf(a.P, a.L, r); }
+function clearShelf() { F.shelf = null; renderPair(); msg('保留棚の固定を解除しました'); }
 /* ---------------- 入庫(入庫前の場所にある部品を1つずつ) ---------------- */
 function stockIn(P) {
   const st = statusOf(P.tag);
   if (st === '入庫済') return dupSheet(P, 'すでに入庫済です');
-  if (st === '保留') return stopSheet(P, '保留品は入庫できません', [['保留の理由', esc(HOLDR[P.tag] || ((MAST.plans || {})[P.part] || {}).hold || '-'), 'warn']], '保留が解除されてから入庫してください。', '保留品は入庫できません');
+  if (st === '保留') return stopSheet(P, '保留品は入庫できません', [['保留の理由', esc(holdReasonOf(P) || '-'), 'warn']], '保留が解除されてから入庫してください。', '保留品は入庫できません');
   if (st === '未受入' || st === '未検査') return stopSheet(P, 'まだ検査されていません', [['いまの状態', st, 'bad']], '検査済になってから入庫してください。', 'まだ検査されていません');
   if (st !== '未入庫' && st !== '検査済' && st !== '包装済') return stopSheet(P, '入庫できる状態ではありません', [['いまの状態', st, 'bad']], '入庫前の置き場所にある、検査済・包装済の部品だけ入庫できます。', '入庫できる状態ではありません');
   if (st === '検査済' || st === '包装済') return stopSheet(P, '入庫前の置き場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad'], ['入庫前の場所', esc(locsOfType('入庫前').join('・') || '-'), 'ok']],
@@ -444,18 +477,23 @@ function stockIn(P) {
   msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>入庫済</b> にしました`, 'ok');
 }
 /* ---------------- 保留(優先の逆): 理由をどこでも見えるように ---------------- */
-function holdReasonOf(t) {   // 保留中ならその理由、まだなら計画の保留理由
-  const plan = ((MAST.plans || {})[t.part] || {}).hold || '';
-  return STAT[t.tag] === '保留' ? (HOLDR[t.tag] || plan || '理由なし') : plan;
+// 保留にすべき理由(優先の逆): 保留タグ(タグの備考) → 計画の保留理由。なければ空
+function needHold(t) {
+  const tg = MAST.tags[t.tag] || {};
+  if (tg.hold || t.hold) return tg.note || '保留タグ';
+  return ((MAST.plans || {})[t.part] || {}).hold || '';
 }
-function showShelf(L) {
+function holdReasonOf(t) {   // 保留中ならその理由、まだならタグ・計画の保留理由
+  return STAT[t.tag] === '保留' ? (HOLDR[t.tag] || needHold(t) || '理由なし') : needHold(t);
+}
+function showShelf(L, fixed) {
   const its = Object.entries(PLACED).filter(([tag, p]) => !p.cart && p.loc === L.code && STAT[tag] === '保留');
   beep('ok'); flash('ok');
   sheet('hold', '▤', `保留棚 ${esc(L.code)}${L.name ? ' ' + esc(L.name) : ''}`,
     its.length ? its.map(([tag]) => { const t = MAST.tags[tag] || TAGX[tag] || {}; return [`<span class="mono">${esc(t.part || tag)}</span>`, esc(holdReasonOf({ tag, part: t.part })), 'warn']; }) : [['この棚', 'いま保留品はありません', 'ok']],
-    its.length ? `この棚にある保留品 <b>${its.length}点</b> と、その理由です。` : '', '', 8000);
-  say(its.length ? `保留棚 ${spell(L.code)} には、保留品が ${its.length} 点あります` : `保留棚 ${spell(L.code)} は空です`);
-  msg(`保留棚 <b>${esc(L.code)}</b>: 保留品 ${its.length}点`, 'warn');
+    `${its.length ? `この棚にある保留品 <b>${its.length}点</b> と、その理由です。` : ''}${fixed ? '<br><b>この棚を固定しました。</b>部品を読むと、この保留棚に登録します。' : ''}`, '', 8000);
+  say(`保留棚 ${spell(L.code)} を固定しました。${its.length ? `保留品が ${its.length} 点あります。` : ''}部品を読むと、保留棚に登録します`);
+  msg(`保留棚 <b>${esc(L.code)}</b> を固定しました(いま ${its.length}点)。部品のタグを読むと、この保留棚に登録します`, 'warn');
 }
 
 /* ---------------- 出庫(1つずつ / 分ける / まとめる) ---------------- */
@@ -829,7 +867,7 @@ function demoReset() {
   const t0 = Date.now();
   for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI, HOLDR, ORDERS, QTY, TAGX, MERGED]) for (const k of Object.keys(o)) delete o[k];
   ATTACHED.clear(); F.merge = null; F.attachWait = null;
-  F.desk = null; F.holdPending = null; F.inspWait = null; renderRoutine(); PREV_HOLD = null;
+  F.desk = null; F.holdPending = null; F.inspWait = null; F.shelf = null; LASTPART = null; renderRoutine(); PREV_HOLD = null;
   APPLIED.clear(); LASTROW = 1; RECENT = []; ALERTQ.length = 0; renderAlert();
   OUTBOX = OUTBOX.filter(e => e.type === 'hello' ? false : (e.data.t || 0) > t0); lsSet('bi_outbox', JSON.stringify(OUTBOX));
   Object.assign(F, { part: null, cart: null, loc: null, moveCand: false }); CAND = null; renderCand();
