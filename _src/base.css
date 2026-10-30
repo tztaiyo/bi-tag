@@ -46,3 +46,4 @@ body.login-page{background:linear-gradient(160deg,#12264a 0%,#1d3d72 100%)}
 .fl{display:grid;gap:4px;font-size:12px;color:var(--ink2);font-weight:700}
 .loginmsg{color:#a21b1b;font-size:13px;min-height:1em;white-space:pre-wrap}
 .st-未入庫{background:#7c3aed} .st-入庫済{background:#0f766e}
+.st-出庫済{background:#475569} .st-補用未検査{background:#2563eb} .st-補用検査済{background:#16a34a} .st-包装待ち{background:#a16207} .st-包装前{background:#c2410c} .st-包装済{background:#0e7490} .st-出荷待ち{background:#be185d} .st-まとめ済{background:#9ca3af}

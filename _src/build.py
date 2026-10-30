@@ -34,7 +34,7 @@ def page(title, css, scripts, theme):
 
 
 (OUT / "index.html").write_text(page("現場スキャン", "src/field.css",
-    code((NPM / "jsqr/dist/jsQR.js").read_text()) + code(L("src/common.js")) + code(L("src/field.js")), "#0b1424"), encoding="utf-8")
+    code((NPM / "jsqr/dist/jsQR.js").read_text()) + code((NPM / "qrcode-generator/qrcode.js").read_text()) + code(L("src/common.js")) + code(L("src/field.js")), "#0b1424"), encoding="utf-8")
 (OUT / "admin.html").write_text(page("受入・検査 管理画面", "src/admin.css",
     code((NPM / "qrcode-generator/qrcode.js").read_text()) + code(L("src/common.js")) + code(L("src/admin.js")), "#12264a"), encoding="utf-8")
 

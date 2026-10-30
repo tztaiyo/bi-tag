@@ -188,3 +188,16 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .rt-r:first-of-type{border-top:0;padding-top:0}
 .rt-b{font-size:16px;line-height:1.45}.rt-s{grid-column:1/-1;font-size:15px;font-weight:800;color:#0d3b1e}
 .rt-r.now{background:#e6f4ea;margin:0 -6px;padding:8px 6px;border-radius:10px;border:0}
+/* フェーズ2: 出庫 */
+.modes{grid-template-columns:repeat(3,1fr)}
+.modes button{min-height:46px;font-size:16px}
+#issuebar button.on{background:#fff;border-color:#fff;color:var(--navy)}
+.sh-nums{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sh-nums .btn{min-height:64px;font-size:20px;font-weight:800;border-radius:14px;display:flex;flex-direction:column;gap:0}
+.sh-nums .btn small{font-size:13px;font-weight:400;color:#555}
+.sh-nums .sh-main{grid-column:1/-1}
+.sh-qr{margin-top:12px;display:grid;justify-items:center;gap:4px}.sh-qr svg{width:210px;height:210px}
+.mergebox{margin:0 max(12px,env(safe-area-inset-left,0px)) 6px;background:#17243d;border:2px solid #3a4d73;border-radius:12px;padding:10px 12px;display:grid;gap:6px}
+.mg-h{font-size:15px;color:#c3cede}.mg-h b{color:#fff}
+.mg-r{display:flex;justify-content:space-between;background:#fff;color:var(--ink);border-radius:8px;padding:6px 10px;font-size:15px}
+.mergebox{grid-template-columns:minmax(0,1fr)}.mergebox .regbtn{white-space:normal;font-size:18px}

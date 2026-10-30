@@ -115,3 +115,8 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 .orow .ost{font-size:13px;color:var(--warn);font-weight:700}.orow.done .ost{color:var(--ok)}
 .orow.hold-ok .ost{color:var(--ok)}.orow.hold-ng .ost{color:var(--pri)}.orow.hold-wait .ost{color:var(--warn)}
 .orow{grid-template-columns:auto 1fr auto}
+.kpirow{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center}.kpil{font-size:13px;font-weight:700;color:var(--ink2)}
+.kpis.k7{grid-template-columns:repeat(7,1fr)}.kpi b{font-size:26px}.kpi{padding:8px 12px}.kpi div{font-size:14px}
+.kpis{margin-bottom:8px}
+.kpi.k-出庫済{border-left-color:#475569}.kpi.k-補用未検査{border-left-color:#2563eb}.kpi.k-補用検査済{border-left-color:#16a34a}.kpi.k-包装待ち{border-left-color:#a16207}.kpi.k-包装前{border-left-color:#c2410c}.kpi.k-包装済{border-left-color:#0e7490}.kpi.k-出荷待ち{border-left-color:#be185d}
+.newtag{border:2px solid #f0b429;background:#fffbea}

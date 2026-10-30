@@ -235,9 +235,10 @@ const ngText = ng => ng.map(x => `${x.k}: 読んだのは ${x.got} / 計画は $
    台車タグ: BI-C;ID=CP-01;PZ=1                                     (PZ=1 なら優先台車)
    場所タグ: BI-L;ID=K-P;K=INSP;PZ=1                                (PZ=1 なら優先置き場)
    タグだけで品番・優先・種類が分かるので、通信できない場所でも判定できる */
-const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', DESK: '検査机', HOLD: '保留場所', PRE: '入庫前', AREA: '置き場' };
-// 工程の場所(検査机・保留場所・入庫前)は、受入の計画チェックの対象外
-const PROCESS_LOC = new Set(['検査机', '保留場所', '入庫前']);
+const LOC_KIND = { TEMP: '仮置き', INSP: '検査エリア', DESK: '検査机', HOLD: '保留場所', PRE: '入庫前',
+  SPT: '補用仮置き', SPD: '補用検査机', PKT: '包装仮置き', PKW: '包装作業場', SHP: '出荷前', AREA: '置き場' };
+// 工程の場所は、受入の計画チェックの対象外
+const PROCESS_LOC = new Set(['検査机', '保留場所', '入庫前', '補用仮置き', '補用検査机', '包装仮置き', '包装作業場', '出荷前']);
 const isProcessLoc = (m, code) => PROCESS_LOC.has(((m && m.locs) || {})[code] && m.locs[code].type);
 const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
 function parseTag(text) {
@@ -258,7 +259,29 @@ function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); retu
          alert(管理からの優先アラート) / ack(現場の受信確認) / hello(端末の起動・生存) */
 /* ステータスの流れ: 未受入 →(台車に載せる)→ 未検査 →(検査机で読む)→ 検査済 / 保留
                      検査済 →(入庫前の場所に置く)→ 未入庫 →(入庫で読む)→ 入庫済 */
-const STATUSES = ['未受入', '未検査', '検査済', '保留', '未入庫', '入庫済'];
+const STATUSES_1 = ['未受入', '未検査', '検査済', '保留', '未入庫', '入庫済'];
+/* フェーズ2: 入庫済 →(出庫で読む)→ 出庫済 →(補用検査の仮置き・机)→ 補用未検査 →(机で読む)→ 補用検査済
+             →(包装の仮置き)→ 包装待ち →(包装の作業場)→ 包装前 →(読む)→ 包装済 →(出荷前)→ 出荷待ち / (入庫前)→ 未入庫 */
+const STATUSES_2 = ['出庫済', '補用未検査', '補用検査済', '包装待ち', '包装前', '包装済', '出荷待ち'];
+const STATUSES = [...STATUSES_1, ...STATUSES_2];
+// 置かれている場所の種別で決まるステータス(場所のステータス)
+function deriveStatus(s, t) {
+  if (s === '検査済' && t === '入庫前') return '未入庫';
+  if (s === '出庫済' && (t === '補用仮置き' || t === '補用検査机')) return '補用未検査';
+  if (s === '補用検査済' && t === '包装仮置き') return '包装待ち';
+  if (s === '補用検査済' && t === '包装作業場') return '包装前';
+  if (s === '包装済' && t === '出荷前') return '出荷待ち';
+  if (s === '包装済' && t === '入庫前') return '未入庫';
+  return s;
+}
+// 出庫で分けた・まとめたときの新しいタグの番号(だれが発行しても同じ番号になるように決める)
+//   分ける: T0003 → T0003-2, T0003-3 …   まとめる: T0002 ほか → T0002-M1, T0002-M2 …
+function nextTagId(base, kind, existing) {
+  const pre = kind === 'merge' ? `${base}-M` : `${base}-`;
+  let n = kind === 'merge' ? 1 : 2;
+  while (existing.has(pre + n)) n++;
+  return pre + n;
+}
 const HOLD_REASONS = ['数量違い', '不良疑い', '書類不備', 'その他'];
 function eventRow(e) { return [e.id, e.at, e.device, e.account, e.type, e.tag || '', e.part || '', e.lot || '', e.loc || '', JSON.stringify(e.data || {}), e.cart || '']; }
 function rowEvent(r, rowNo) {
@@ -270,7 +293,7 @@ function newEvent(type, f = {}) {
 }
 function buildState(masters, events) {
   const items = {}, carts = {};
-  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '' });
+  const item = (tag, e) => items[tag] || (items[tag] = { tag, part: (e && e.part) || '', name: '', lot: (e && e.lot) || '', qty: '', pri: false, priSrc: '', status: '未受入', prev: '', hold: '', cart: '', direct: '', loc: '', since: '', by: '', hist: [], offPlan: '', origin: '', reissue: '', attached: false, mergedTo: '' });
   const cart = code => carts[code] || (carts[code] = { code, name: ((masters.carts || {})[code] || {}).name || '', pz: !!((masters.carts || {})[code] || {}).pz, loc: '', since: '', by: '' });
   for (const t of Object.values(masters.tags)) Object.assign(item(t.tag), { part: t.part, name: t.name, lot: t.lot, qty: t.qty, pri: t.pri, priSrc: t.pri ? 'タグ' : '' });
   for (const c of Object.keys(masters.carts || {})) cart(c);
@@ -309,6 +332,18 @@ function buildState(masters, events) {
     } else if (e.type === 'alert') {
       alerts.push({ ...e, acks: [] });
       for (const it of Object.values(items)) if (it.part === e.part || it.tag === e.tag) { it.pri = true; it.priSrc = 'アラート'; it.hist.push(e); }
+    } else if (e.type === 'split') {   // 出庫で分けた: 元のタグは出庫分、新しいタグは残り(その場に残す)
+      const o = item(e.tag, e), d = e.data, nw = item(d.newTag, e);
+      o.qty = String(d.qtyOut); o.status = '出庫済'; o.since = e.at; o.by = e.device; o.hist.push(e);
+      Object.assign(nw, { name: o.name || d.name || '', qty: String(d.qtyRest), status: '入庫済', cart: '', direct: e.loc, origin: e.tag, reissue: '分割', since: e.at, by: e.device });
+      nw.hist.push(e);
+    } else if (e.type === 'merge') {   // 出庫でまとめた: 元のタグは使えなくなり、新しいタグ1枚に
+      const d = e.data, nw = item(e.tag, e);
+      for (const f of d.from || []) { const it = item(f); Object.assign(it, { status: 'まとめ済', mergedTo: e.tag, cart: '', direct: '' }); it.hist.push(e); }
+      Object.assign(nw, { name: d.name || '', qty: String(d.qty), status: '出庫済', cart: e.cart || '', direct: e.cart ? '' : e.loc, origin: (d.from || []).join('+'), reissue: 'まとめ', since: e.at, by: e.device });
+      nw.hist.push(e);
+    } else if (e.type === 'attach') {   // 新しいタグを貼ったことを確認
+      const it = item(e.tag, e); it.attached = true; it.hist.push(e);
     } else if (e.type === 'order') {   // 管理からの移動の指示(台車を検査机・入庫前などへ)
       orders.push({ ...e, acks: [], done: null, to: e.loc, cart: e.cart });
     } else if (e.type === 'ack') {
@@ -319,8 +354,7 @@ function buildState(masters, events) {
   // 部品のいまの場所 = 載っている台車の置き場所(台車がなければ直接置いた場所)
   for (const it of Object.values(items)) {
     it.loc = it.cart ? (carts[it.cart] || {}).loc || '' : it.direct;
-    // 検査済の部品が「入庫前」の場所にあれば、未入庫
-    if (it.status === '検査済' && ((masters.locs || {})[it.loc] || {}).type === '入庫前') it.status = '未入庫';
+    it.status = deriveStatus(it.status, ((masters.locs || {})[it.loc] || {}).type || '');   // 場所で決まるステータス
     const p = (masters.plans || {})[it.part]; it.planHold = p ? p.hold : '';
   }
   return { items, carts, alerts, orders, devices };

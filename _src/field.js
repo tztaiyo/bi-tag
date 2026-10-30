@@ -6,8 +6,8 @@
    - タグの読み取りはこの端末の中で行い、結果だけをスプレッドシートに送る
    ===================================================================== */
 // 画面の名前と内部の名前: 受入(台車に載せる・置く) / 検査(検査机で検査済・保留) / 入庫(入庫前→入庫済)
-const MODES = [['置く', '受入'], ['検査', '検査'], ['入庫', '入庫']];
-const F = { desk: null, result: '検査済', holdPending: null, inspWait: null, mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
+const MODES = [['置く', '受入'], ['検査', '検査'], ['入庫', '入庫'], ['出庫', '出庫'], ['補用', '補用検査'], ['包装', '包装']];
+const F = { merge: null, attachWait: null, desk: null, result: '検査済', holdPending: null, inspWait: null, mode: '置く', part: null, cart: null, loc: null, moveCand: false, auto: lsGet('bi_reg') !== 'manual', voice: lsGet('bi_voice') !== '0', big: lsGet('bi_big') === '1', reason: HOLD_REASONS[0], started: false };
 let MAST = { tags: {}, locs: {}, carts: {} };
 let OUTBOX = [];            // 送信待ちのイベント
 let RECENT = [];            // 画面に出す最近の操作 { ev, state: sending|sent|queued, ms }
@@ -21,6 +21,10 @@ const CARTLOC = {};         // 台車 → 置き場所
 const STAT = {};            // タグ → ステータス(検査済・保留・入庫済)
 const HOLDR = {};           // タグ → 保留の理由
 const ORDERS = {};          // 管理からの移動の指示 id → { e, done, mine }
+const QTY = {};             // タグ → いまの数量(出庫で分けたとき変わる)
+const TAGX = {};            // 出庫で発行した新しいタグ → { part, lot, name, origin, kind }
+const MERGED = {};          // まとめて使えなくなったタグ → 新しいタグ
+const ATTACHED = new Set(); // 新しいタグを貼ったことを確認済み
 const APPLIED = new Set();
 function applyEv(e) {
   if (APPLIED.has(e.id)) return; APPLIED.add(e.id);
@@ -34,14 +38,25 @@ function applyEv(e) {
       if (cl !== e.loc) PLACED[e.tag] = { cart: '', loc: e.loc, at: e.at, by: e.device };
     }
   }
+  else if (e.type === 'split') {
+    const d = e.data; STAT[e.tag] = '出庫済'; QTY[e.tag] = d.qtyOut; QTY[d.newTag] = d.qtyRest; STAT[d.newTag] = '入庫済';
+    PLACED[d.newTag] = { cart: '', loc: e.loc, at: e.at, by: e.device };
+    TAGX[d.newTag] = { part: e.part, lot: e.lot, name: d.name || '', origin: e.tag, kind: '分割' };
+  }
+  else if (e.type === 'merge') {
+    const d = e.data;
+    for (const f of d.from || []) { STAT[f] = 'まとめ済'; MERGED[f] = e.tag; delete PLACED[f]; }
+    STAT[e.tag] = '出庫済'; QTY[e.tag] = d.qty; PLACED[e.tag] = { cart: e.cart || '', loc: e.loc, at: e.at, by: e.device };
+    TAGX[e.tag] = { part: e.part, lot: e.lot, name: d.name || '', origin: (d.from || []).join('+'), kind: 'まとめ' };
+  }
+  else if (e.type === 'attach') ATTACHED.add(e.tag);
   else if (e.type === 'order') ORDERS[e.id] = ORDERS[e.id] || { e, done: null, mine: false };
   else if (e.type === 'ack' && e.data.order && ORDERS[e.data.order]) ORDERS[e.data.order].acked = e;
 }
 const locOf = tag => { const p = PLACED[tag]; return p ? (p.cart ? (CARTLOC[p.cart] || p.loc) : p.loc) : ''; };
 function statusOf(tag) {   // この端末から見た、いまのステータス
-  let s = STAT[tag] || (PLACED[tag] ? '未検査' : '未受入');
-  if (s === '検査済' && (MAST.locs[locOf(tag)] || {}).type === '入庫前') s = '未入庫';
-  return s;
+  const s = STAT[tag] || (PLACED[tag] ? '未検査' : '未受入');
+  return deriveStatus(s, (MAST.locs[locOf(tag)] || {}).type || '');
 }
 const locsOfType = t => Object.values(MAST.locs).filter(l => l.type === t).map(l => l.code);
 const whereNow = p => p ? (p.cart ? `${p.cart}(${CARTLOC[p.cart] || p.loc})` : p.loc) : '';
@@ -107,6 +122,8 @@ function renderShell() {
   <div class="orderbar" id="orderbar" hidden></div>
   <nav class="modes">${MODES.map(([m, label]) => `<button data-m="${m}" onclick="setMode('${m}')">${label}</button>`).join('')}</nav>
   <div class="results" id="results" hidden><span>検査の結果</span>${['検査済', '保留'].map(r => `<button data-res="${r}" onclick="setResult('${r}')">${r === '検査済' ? '✓ 検査済' : '保留'}</button>`).join('')}</div>
+  <div class="results" id="issuebar" hidden><span>出庫のしかた</span><button data-iss="one" onclick="setIssue(false)">1つずつ</button><button data-iss="merge" onclick="setIssue(true)">まとめる</button></div>
+  <div class="mergebox" id="mergebox" hidden></div>
   <div class="reasons" id="reasons" hidden>${HOLD_REASONS.map(r => `<button data-r="${r}" onclick="setReason('${r}')">${r}</button>`).join('')}</div>
   <section class="pair" id="pair">
     <div class="slot wide" id="slotP"></div>
@@ -168,11 +185,15 @@ function setMode(m) {
   const changed = F.mode !== m;
   F.mode = m; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('pair2').hidden = m !== '置く'; $('slotD').hidden = $('results').hidden = m !== '検査';
+  $('issuebar').hidden = m !== '出庫'; if (m !== '出庫') F.merge = null; renderMerge();
   $('reasons').hidden = !(m === '検査' && F.result === '保留');
   if (changed) { F.part = null; F.moveCand = false; F.inspWait = null; }
   hint(); renderPair();
   if (changed && $('msg')) msg(m === '検査' ? (F.desk ? `検査: <b>${esc(F.desk.code)}</b> で検査した部品のタグを読んでください` : '検査: まず <b>自分の机の場所タグ</b> を読んでください')
-    : m === '入庫' ? '入庫: 入庫前の置き場所にある部品のタグを読むと <b>入庫済</b> になります' : '受入: 部品・台車・置き場所のタグを読んでください');
+    : m === '入庫' ? '入庫: 入庫前の置き場所にある部品のタグを読むと <b>入庫済</b> になります'
+    : m === '出庫' ? '出庫: 入庫済の部品のタグを読むと <b>出庫済</b> になります。一部だけ出すときは、残りに新しいタグを発行します'
+    : m === '補用' ? '補用検査: 自分の補用検査机にある部品のタグを読むと <b>補用検査済</b> になります'
+    : m === '包装' ? '包装: 包装の作業場にある部品を包装したら、タグを読むと <b>包装済</b> になります' : '受入: 部品・台車・置き場所のタグを読んでください');
 }
 function setResult(r) {
   F.result = r; document.querySelectorAll('.results button').forEach(b => b.classList.toggle('on', b.dataset.res === r));
@@ -196,10 +217,13 @@ function hint() {
   const t = F.mode === '置く' ? nextStep()
     : F.mode === '検査' ? (F.holdPending ? `保留品を保留場所に置いて、保留場所のタグを読んでください` : !F.desk ? '自分の机の場所タグを読んでください'
       : `${F.desk.code} で検査した部品のタグを読んでください(結果: ${F.result}${F.result === '保留' ? '・' + F.reason : ''})`)
-    : '入庫前の置き場所にある部品のタグを読んでください';
+    : F.mode === '入庫' ? '入庫前の置き場所にある部品のタグを読んでください'
+    : F.mode === '出庫' ? (F.merge ? `まとめる部品のタグを続けて読んでください(いま ${F.merge.length}点)` : '出庫する部品のタグを読んでください')
+    : F.mode === '補用' ? '補用検査机にある部品のタグを読んでください' : '包装した部品のタグを読んでください';
   const h = $('camhint'); if (h) h.textContent = t;
 }
-function partName(p) { return (MAST.tags[p.tag] || {}).name || ''; }
+function partName(p) { return (MAST.tags[p.tag] || {}).name || (TAGX[p.tag] || {}).name || ''; }
+const qtyOf = t => QTY[t.tag] != null ? +QTY[t.tag] : +((MAST.tags[t.tag] || {}).qty || t.qty || 1);
 function isPriPart(p) { return !!(p.pri || (MAST.tags[p.tag] || {}).pri || ALERT_PRI[p.part]); }
 // いまそろっている登録の候補(なければ null)
 function readyAction() {
@@ -289,7 +313,19 @@ function onCode(text, src = 'cam') {
   if (src === 'cam' && F.part && F.part.done && F.part.tag === P.tag && F.part.ctx === ctx()) return;
   const pri = isPriPart(P);
   if (F.mode === '検査') return inspect(P);
+  if (MERGED[P.tag]) return stopSheet(P, 'このタグは使えません', [['まとめた先の新しいタグ', esc(MERGED[P.tag]), 'ok']], 'まとめて出庫したため、このタグは無効です。新しいタグを使ってください。', 'このタグは使えません。新しいタグを使ってください');
+  if (TAGX[P.tag] && !ATTACHED.has(P.tag)) {   // 発行した新しいタグを初めて読んだ = 貼ったことを確認
+    ATTACHED.add(P.tag); send(newEvent('attach', { tag: P.tag, part: P.part, lot: P.lot }));
+    if (F.attachWait === P.tag) {
+      F.attachWait = null; F.part = { ...P, done: true, ctx: ctx() }; renderPair(); closeSheet(); beep('link'); flash('ok'); linkedFx(); say('新しいタグを確認しました');
+      return msg(`✓ 新しいタグ <b class="mono">${esc(P.tag)}</b> を貼ったことを確認しました`, 'ok');
+    }
+    toast(`新しいタグ ${P.tag} を確認しました`);
+  }
   if (F.mode === '入庫') return stockIn(P);
+  if (F.mode === '出庫') return F.merge ? mergeAdd(P) : issue(P);
+  if (F.mode === '補用') return spareInspect(P);
+  if (F.mode === '包装') return pack(P);
   F.part = P; F.moveCand = false;
   // 二重読み取り(登録済みの部品)がいちばん優先。優先品・計画のチェックより先に知らせる
   // 計画で保留の部品: 検査しないで保留棚へ(台車には載せない)
@@ -386,13 +422,110 @@ function stockIn(P) {
   if (st === '入庫済') return dupSheet(P, 'すでに入庫済です');
   if (st === '保留') return stopSheet(P, '保留品は入庫できません', [['保留の理由', esc(HOLDR[P.tag] || ((MAST.plans || {})[P.part] || {}).hold || '-'), 'warn']], '保留が解除されてから入庫してください。', '保留品は入庫できません');
   if (st === '未受入' || st === '未検査') return stopSheet(P, 'まだ検査されていません', [['いまの状態', st, 'bad']], '検査済になってから入庫してください。', 'まだ検査されていません');
-  if (st === '検査済') return stopSheet(P, '入庫前の置き場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad'], ['入庫前の場所', esc(locsOfType('入庫前').join('・') || '-'), 'ok']],
+  if (st !== '未入庫' && st !== '検査済' && st !== '包装済') return stopSheet(P, '入庫できる状態ではありません', [['いまの状態', st, 'bad']], '入庫前の置き場所にある、検査済・包装済の部品だけ入庫できます。', '入庫できる状態ではありません');
+  if (st === '検査済' || st === '包装済') return stopSheet(P, '入庫前の置き場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad'], ['入庫前の場所', esc(locsOfType('入庫前').join('・') || '-'), 'ok']],
     '先に、台車ごと入庫前の場所へ移してください(受入で 台車 → 入庫前の場所タグ)。', '入庫前の置き場所にありません');
   send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '入庫済', from: st, at: locOf(P.tag) } }));
   F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx();
   beep('link'); flash('ok'); say('入庫しました');
   msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>入庫済</b> にしました`, 'ok');
 }
+/* ---------------- 出庫(1つずつ / 分ける / まとめる) ---------------- */
+function setIssue(merge) {
+  F.merge = merge ? [] : null;
+  document.querySelectorAll('#issuebar button').forEach(b => b.classList.toggle('on', (b.dataset.iss === 'merge') === !!merge));
+  renderMerge(); hint();
+  msg(merge ? 'まとめる部品のタグを続けて読み、最後に「まとめて出庫」を押してください。新しいタグを1枚発行します' : '出庫する部品のタグを読んでください', 'ok');
+}
+function issueCheck(P) {   // 出庫できるか
+  const st = statusOf(P.tag);
+  if (st === '入庫済') return true;
+  if (STATUSES_2.includes(st)) { dupSheet(P, `すでに出庫済です(${st})`); return false; }
+  stopSheet(P, 'まだ入庫されていません', [['いまの状態', st, 'bad']], '入庫済の部品だけ出庫できます。', 'まだ入庫されていません'); return false;
+}
+function issue(P) {
+  if (!issueCheck(P)) return;
+  const q = qtyOf(P);
+  F.part = P; renderPair();
+  if (q <= 1) return doIssue(P, 1);
+  // 数を選ぶ: 全部なら出庫、一部なら残りに新しいタグを発行
+  const nums = []; for (let k = q - 1; k >= 1 && nums.length < 5; k--) nums.push(k);
+  beep('ok');
+  sheet('dup', '?', 'いくつ出庫しますか?', [['部品', `<span class="mono">${esc(P.part)}</span>`], ['いまの数量', String(q), 'ok']],
+    '一部だけ出すときは、<b>残りに新しいタグを発行</b>します(残りはこの場所に残す)。',
+    `<div class="sh-nums"><button class="btn sh-main" onclick="doIssue(F.part, ${q})">全部(${q})</button>${nums.map(k => `<button class="btn" onclick="doIssue(F.part, ${k})">${k} だけ<small>残り ${q - k}</small></button>`).join('')}</div>`);
+  say(`いくつ出庫しますか。いまの数量は ${q} です`);
+}
+function knownTags() { return new Set([...Object.keys(MAST.tags), ...Object.keys(TAGX), ...Object.keys(STAT)]); }
+function doIssue(P, k) {
+  closeSheet(); if (!P) return;
+  const q = qtyOf(P), at = locOf(P.tag);
+  if (k >= q) {
+    send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '出庫済', qty: q, from: '入庫済', at } }));
+    F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx(); beep('link'); flash('ok'); say('出庫しました');
+    return msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>出庫済</b> にしました(${q})`, 'ok');
+  }
+  const newTag = nextTagId(P.tag, 'split', knownTags());
+  send(newEvent('split', { tag: P.tag, part: P.part, lot: P.lot, loc: at, data: { newTag, qtyOut: k, qtyRest: q - k, name: partName(P) } }));
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx();
+  newTagSheet({ tag: newTag, part: P.part, lot: P.lot, qty: q - k, pri: !!P.pri }, `分けた残り(${q - k})`, `<b class="mono">${esc(P.part)}</b> を ${k} 出庫しました。元のタグは出庫する方に付けたままにします。`);
+}
+// 新しいタグを発行したら: QRを大きく出す → PCで印刷して貼る → そのタグを読んで確認
+function newTagSheet(t, what, lead) {
+  F.attachWait = t.tag; beep('pri'); flash('ok');
+  sheet('dup', '🏷', '新しいタグを発行しました', [['新しいタグ', `<span class="mono">${esc(t.tag)}</span>`, 'ok'], ['貼るもの', esc(what)], ['数量', String(t.qty)]],
+    `${lead}<br><b>PCで印刷</b>して(管理画面に出ます)貼り、<b>貼ったタグを読んで確認</b>してください。`,
+    `<div class="sh-qr">${qrSvg(partQR(t))}<div class="small">この画面のQRを写真で残しておくこともできます</div></div>`);
+  say('新しいタグを発行しました。印刷して貼ったら、そのタグを読んでください');
+  msg(`🏷 新しいタグ <b class="mono">${esc(t.tag)}</b> を発行しました。印刷して貼り、読んで確認してください`, 'warn');
+  renderRoutine();
+}
+function mergeAdd(P) {
+  if (!issueCheck(P)) return;
+  if (F.merge.find(x => x.tag === P.tag)) { beep('dup'); return msg(`${esc(P.tag)} はもう入っています`, 'dup'); }
+  F.merge.push({ ...P, qty: qtyOf(P), name: partName(P) }); F.part = { ...P, done: true, ctx: ctx() };
+  beep('ok'); flash('ok'); renderPair(); renderMerge(); hint(); say(`${F.merge.length}点目`);
+  msg(`<b class="mono">${esc(P.part)}</b>(${esc(P.tag)})を加えました。続けて読むか、「まとめて出庫」を押してください`, 'ok');
+}
+function renderMerge() {
+  const el = $('mergebox'); if (!el) return;
+  if (!F.merge) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="mg-h">まとめる部品 <b>${F.merge.length}点</b></div>${F.merge.map(x => `<div class="mg-r"><span class="mono"><b>${esc(x.part)}</b></span><span>${esc(x.tag)} ・ ${x.qty}</span></div>`).join('') || '<div class="mute small" style="color:#9fb0cc">まだありません。タグを読んでください</div>'}
+    ${F.merge.length >= 2 ? `<button class="btn regbtn" onclick="doMerge()">まとめて出庫(${F.merge.length}点 → 新しいタグ1枚)</button>` : ''}`;
+}
+function doMerge() {
+  const L = F.merge; if (!L || L.length < 2) return;
+  const first = L[0], same = L.every(x => x.part === first.part);
+  const qty = same ? L.reduce((a, x) => a + (+x.qty || 0), 0) : L.length;
+  const part = same ? first.part : 'SET', name = same ? first.name : L.map(x => x.name || x.part).join('+');
+  const p = PLACED[first.tag] || {}, newTag = nextTagId(first.tag, 'merge', knownTags());
+  send(newEvent('merge', { tag: newTag, part, lot: first.lot, cart: p.cart || '', loc: locOf(first.tag), data: { from: L.map(x => x.tag), qty, name } }));
+  F.merge = []; renderMerge(); linkedFx();
+  newTagSheet({ tag: newTag, part, lot: first.lot, qty, pri: L.some(x => x.pri) }, `まとめたもの(${qty})`, `${L.length}点をまとめて出庫しました。<b>元のタグ(${L.map(x => esc(x.tag)).join('・')})は使えなくなります</b>。`);
+}
+/* ---------------- 補用検査・包装(机・作業場にある部品を1つずつ) ---------------- */
+function spareInspect(P) {
+  const st = statusOf(P.tag), at = locType(locOf(P.tag));
+  if (['補用検査済', '包装待ち', '包装前', '包装済', '出荷待ち'].includes(st)) return dupSheet(P, `すでに補用検査済です(${st})`);
+  if (st === '出庫済') return stopSheet(P, '補用検査の場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad']], '台車ごと補用検査の仮置きへ運んでください。', '補用検査の場所にありません');
+  if (st !== '補用未検査') return stopSheet(P, '補用検査の段階ではありません', [['いまの状態', st, 'bad']], '出庫済の部品だけ補用検査できます。', '補用検査の段階ではありません');
+  if (at !== '補用検査机') return stopSheet(P, 'まだ仮置きにあります', [['いまの場所', esc(whereNow(PLACED[P.tag])), 'bad'], ['運ぶ先', esc(locsOfType('補用検査机').join('・')), 'ok']], '台車ごと自分の補用検査机へ運んでから読んでください。', 'まだ仮置きにあります。台車ごと自分の机へ運んでください');
+  send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '補用検査済', from: st, at: locOf(P.tag) } }));
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx(); beep('link'); flash('ok'); say('補用検査済にしました');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>補用検査済</b> にしました`, 'ok');
+}
+function pack(P) {
+  const st = statusOf(P.tag);
+  if (st === '包装済' || st === '出荷待ち') return dupSheet(P, `すでに包装済です(${st})`);
+  if (st === '包装待ち') return stopSheet(P, 'まだ包装の仮置きにあります', [['いまの場所', esc(whereNow(PLACED[P.tag])), 'bad'], ['運ぶ先', esc(locsOfType('包装作業場').join('・')), 'ok']], '台車ごと包装の作業場へ運んでから読んでください。', 'まだ仮置きにあります。台車ごと作業場へ運んでください');
+  if (st === '補用検査済') return stopSheet(P, '包装の場所にありません', [['いまの場所', esc(whereNow(PLACED[P.tag]) || '-'), 'bad']], '台車ごと包装の仮置きへ運んでください。', '包装の場所にありません');
+  if (st !== '包装前') return stopSheet(P, '包装の段階ではありません', [['いまの状態', st, 'bad']], '補用検査済の部品だけ包装できます。', '包装の段階ではありません');
+  send(newEvent('status', { tag: P.tag, part: P.part, lot: P.lot, data: { to: '包装済', from: st, at: locOf(P.tag) } }));
+  F.part = { ...P, done: true, ctx: ctx() }; renderPair(); linkedFx(); beep('link'); flash('ok'); say('包装済にしました');
+  msg(`✓ <b class="mono">${esc(P.part)}</b> を <b>包装済</b> にしました`, 'ok');
+}
+
 /* ---------------- 次の作業(いつもの流れ) ----------------
    管理の指示は使わず、台車の中身から次の移動をスマホに出すだけ:
    未検査の部品が載った台車 → 検査机へ / 検査が終わった台車 → 入庫前へ */
@@ -401,11 +534,25 @@ function routineTasks() {
   const carts = {};
   for (const [tag, p] of Object.entries(PLACED)) if (p.cart) (carts[p.cart] = carts[p.cart] || []).push(tag);
   const tasks = [];
+  // [載っているステータス, まだ残っていてはいけないステータス, 行き先の種別(複数可), すでにそこならしない場所]
+  const RULES = [
+    ['未検査', [], ['検査机'], ['検査机']],
+    ['検査済', ['未検査'], ['入庫前'], ['入庫前']],
+    ['出庫済', [], ['補用仮置き'], ['補用仮置き', '補用検査机']],
+    ['補用未検査', [], ['補用検査机'], ['補用検査机']],
+    ['補用検査済', ['補用未検査'], ['包装仮置き'], ['包装仮置き', '包装作業場']],
+    ['包装待ち', [], ['包装作業場'], ['包装作業場']],
+    ['包装済', ['包装前'], ['出荷前', '入庫前'], ['出荷前', '入庫前']],
+  ];
   for (const [c, tags] of Object.entries(carts)) {
     const st = tags.map(statusOf), at = CARTLOC[c] || '', n = s => st.filter(x => x === s).length;
-    if (n('未検査') && locType(at) !== '検査机') tasks.push({ cart: c, at, kind: '検査机', count: n('未検査'), label: '未検査', dest: locsOfType('検査机') });
-    else if (!n('未検査') && n('検査済') && locType(at) !== '入庫前') tasks.push({ cart: c, at, kind: '入庫前', count: n('検査済'), label: '検査済', dest: locsOfType('入庫前') });
+    for (const [s, block, kinds, skip] of RULES) {
+      if (!n(s) || block.some(b => n(b)) || skip.includes(locType(at))) continue;
+      tasks.push({ cart: c, at, kind: kinds.join('か'), count: n(s), label: s, dest: kinds.flatMap(locsOfType) }); break;
+    }
   }
+  // 発行したのに、まだ貼った確認がない新しいタグ
+  for (const [t, x] of Object.entries(TAGX)) if (!ATTACHED.has(t) && !MERGED[t]) tasks.push({ tagTask: t, x });
   return tasks;
 }
 function renderRoutine() {
@@ -413,9 +560,10 @@ function renderRoutine() {
   const ts = routineTasks();
   if (!ts.length) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  const mine = ts.find(t => F.cart && F.cart.code === t.cart);
+  const mine = ts.find(t => !t.tagTask && F.cart && F.cart.code === t.cart);
   const list = (mine ? [mine, ...ts.filter(t => t !== mine)] : ts).slice(0, 2);
-  el.innerHTML = `<div class="rt"><div class="od-t">次の作業(いつもの流れ)${ts.length > 2 ? ` ・ ほか${ts.length - 2}台` : ''}</div>${list.map(t => {
+  el.innerHTML = `<div class="rt"><div class="od-t">次の作業(いつもの流れ)${ts.length > 2 ? ` ・ ほか${ts.length - 2}件` : ''}</div>${list.map(t => {
+    if (t.tagTask) return `<div class="rt-r"><div class="rt-b">🏷 新しいタグ <b class="mono">${esc(t.tagTask)}</b>(${esc(t.x.kind)})<br>→ 印刷して貼り、そのタグを読む</div></div>`;
     const now = F.cart && F.cart.code === t.cart && F.mode === '置く';
     return `<div class="rt-r ${now ? 'now' : ''}"><div class="rt-b">台車 <b>${esc(t.cart)}</b>${t.at ? `(いま ${esc(t.at)})` : ''} ${t.label} <b>${t.count}点</b><br>→ <b>${t.kind}</b> ${esc(t.dest.join('・'))} へ</div>
       ${now ? `<div class="rt-s">運んだら、${t.kind}の場所タグを読む</div>` : `<button class="btn od-go" onclick="carryCart('${esc(t.cart)}','${t.kind}')">運ぶ</button>`}</div>`; }).join('')}</div>`;
@@ -609,7 +757,7 @@ function renderRecent() {
   const el = $('recent'); if (!el) return;
   el.innerHTML = RECENT.slice(0, 12).map(r => {
     const e = r.ev, d = e.data || {};
-    const what = e.type === 'place' && !e.cart ? `<b class="mono">${esc(e.part)}</b> を <b>${esc(e.loc)}</b> に置いた` : e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を <span class="st st-${esc(d.to)}">${esc(d.to)}</span>${d.reason ? `(${esc(d.reason)})` : ''}${e.loc ? ` @ ${esc(e.loc)}` : ''}` : e.type === 'ack' && d.order ? `指示を開始: 台車 ${esc(e.cart)} → ${esc(e.loc)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
+    const what = e.type === 'place' && !e.cart ? `<b class="mono">${esc(e.part)}</b> を <b>${esc(e.loc)}</b> に置いた` : e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を <span class="st st-${esc(d.to)}">${esc(d.to)}</span>${d.reason ? `(${esc(d.reason)})` : ''}${e.loc ? ` @ ${esc(e.loc)}` : ''}` : e.type === 'split' ? `<b class="mono">${esc(e.part)}</b> を ${d.qtyOut} 出庫 ・ 残り ${d.qtyRest} に新しいタグ <b class="mono">${esc(d.newTag)}</b>` : e.type === 'merge' ? `${(d.from || []).length}点をまとめて出庫 → 新しいタグ <b class="mono">${esc(e.tag)}</b>` : e.type === 'attach' ? `新しいタグ <b class="mono">${esc(e.tag)}</b> を貼付確認` : e.type === 'ack' && d.order ? `指示を開始: 台車 ${esc(e.cart)} → ${esc(e.loc)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
     const st = r.state === 'skip' ? '<span class="skip">数は増えていません</span>' : r.state === 'sent' ? `<span class="sent">✓ 共有 ${(r.ms / 1000).toFixed(1)}秒 ・ ${r.bytes || ''}B</span>` : r.state === 'sending' ? '<span class="sending">送信中…</span>' : '<span class="queued">送信待ち(端末に保存)</span>';
     return `<div class="rc ${d.pri ? 'p' : ''} ${e.type === 'ng' || d.offPlan ? 'n' : ''}"><span class="t">${hms(e.at)}</span><span class="w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>${st}</div>`;
   }).join('') || '<div class="mute small">まだ操作はありません</div>';
@@ -650,7 +798,8 @@ let FIRSTID = '';
 // 管理画面で「デモをリセット」されたら、この端末の記録・固定もはじめからにする
 function demoReset() {
   const t0 = Date.now();
-  for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI, HOLDR, ORDERS]) for (const k of Object.keys(o)) delete o[k];
+  for (const o of [PLACED, CARTLOC, STAT, ALERT_PRI, HOLDR, ORDERS, QTY, TAGX, MERGED]) for (const k of Object.keys(o)) delete o[k];
+  ATTACHED.clear(); F.merge = null; F.attachWait = null;
   F.desk = null; F.holdPending = null; F.inspWait = null; renderRoutine(); PREV_HOLD = null;
   APPLIED.clear(); LASTROW = 1; RECENT = []; ALERTQ.length = 0; renderAlert();
   OUTBOX = OUTBOX.filter(e => e.type === 'hello' ? false : (e.data.t || 0) > t0); lsSet('bi_outbox', JSON.stringify(OUTBOX));
