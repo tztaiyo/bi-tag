@@ -113,3 +113,5 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 .ack.done{font-weight:700;color:var(--ok)}
 .olist{display:grid}.orow{display:grid;grid-template-columns:62px 1fr auto;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:15px;align-items:center}
 .orow .ost{font-size:13px;color:var(--warn);font-weight:700}.orow.done .ost{color:var(--ok)}
+.orow.hold-ok .ost{color:var(--ok)}.orow.hold-ng .ost{color:var(--pri)}.orow.hold-wait .ost{color:var(--warn)}
+.orow{grid-template-columns:auto 1fr auto}
