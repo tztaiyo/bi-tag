@@ -133,7 +133,7 @@ VIEWS.dash = () => {
     <button class="btn primary big" onclick="seedDemo()">デモ用のタグ・台車・置き場所を作る</button>
     <p class="mute small">部品タグ8枚(うち2枚は発行時点で優先)、台車3台、置き場所9か所(検査机・保留場所・入庫前を含む)と、仮の計画を登録します。「タグ発行」「台車・置き場所」から印刷できます。</p></div>`;
   return `<div class="head"><div><h1>現場の状況</h1><div class="mute small">現場のスマホがタグを読むと、数秒でここに反映されます。</div></div>
-    <div class="row"><button class="btn" onclick="resetDemo()">デモをリセット</button><button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div></div>
+    <div class="row"><button class="btn" onclick="resetDemo()">デモをリセット</button><button class="btn hold big" onclick="openHoldOrder()">保留の指示(デモ)</button><button class="btn red big" onclick="openAlert()">優先アラートを受信(デモ)</button></div></div>
     <section class="flowcard"><div class="flow" id="flow">
       <div class="fnode dev" id="fn-dev"><div class="fn-t">現場端末</div><div id="fn-devs"></div></div>
       <div class="lane" id="lane1"><span>結果だけを送信 →</span></div>
@@ -151,7 +151,7 @@ function dashLive() {
     const fd = $('fn-devs'); if (fd) fd.innerHTML = devs.slice(0, 4).map(d => `<div class="fdev"><i class="dot ${Date.now() - d.lastT < 120000 ? 'on' : ''}"></i>${esc(d.name)}</div>`).join('') || '<div class="fn-s">まだ接続なし</div>';
     const ps = $('fn-pcst'); if (ps) ps.textContent = `受信 ${EVENTS.length} 件`;
   });
-  const chip = i => { const ng = offPlan(i); return `<div class="chip ${i.pri ? 'p' : ''} ${ng.length ? 'ng' : ''} ${Date.now() - (FRESH[i.tag] || 0) < 6000 ? 'fresh' : ''}" title="${ng.length ? esc('計画外: ' + ngText(ng).join(' / ')) : ''}" onclick="showItem('${esc(i.tag)}')"><b class="mono">${ng.length ? '⚠ ' : ''}${esc(i.part)}</b><span>${esc(i.name)}</span>${stH(i.status)}</div>`; };
+  const chip = i => { const ng = offPlan(i); return `<div class="chip ${i.pri ? 'p' : ''} ${i.holdReason ? 'h' : ''} ${ng.length ? 'ng' : ''} ${Date.now() - (FRESH[i.tag] || 0) < 6000 ? 'fresh' : ''}" title="${ng.length ? esc('計画外: ' + ngText(ng).join(' / ')) : ''}" onclick="showItem('${esc(i.tag)}')"><b class="mono">${ng.length ? '⚠ ' : ''}${esc(i.part)}</b><span>${i.holdReason ? `<b class="hr">保留: ${esc(i.holdReason)}</b>` : esc(i.name)}</span>${stH(i.status)}</div>`; };
   const carts = Object.values(ST.carts);
   const onCart = c => items.filter(i => i.cart === c.code);
   const cbox = c => `<div class="cbox ${c.pz ? 'pz' : ''} ${Date.now() - (FRESH['cart:' + c.code] || 0) < 6000 ? 'fresh' : ''}"><div class="cb-h"><span class="cb-k">台車</span><b class="mono">${esc(c.code)}</b>${c.pz ? '<span class="pri">優先台車</span>' : ''}<span class="cb-n">${onCart(c).length}点</span></div>${onCart(c).map(chip).join('') || '<div class="lb-e">空</div>'}</div>`;
@@ -168,7 +168,7 @@ function dashLive() {
   return `<div class="kpirow"><span class="kpil">受入〜入庫</span><div class="kpis">${STATUSES_1.map(kpi).join('')}</div></div>
   <div class="kpirow"><span class="kpil">出庫〜包装</span><div class="kpis k7">${STATUSES_2.map(kpi).join('')}</div></div>
   <div class="dgrid"><section class="card"><div class="ch"><h2>置き場マップ</h2><span class="mute small">置き場所 ＞ 台車 ＞ 部品 ・ 光っているのは、いま届いた変更</span></div>
-    ${groups.map(g => { const ls = locs.filter(l => l.type === g); if (!ls.length) return ''; return `<div class="lgroup"><div class="lg-t">${esc(g)}</div><div class="lgrid">${ls.map(lbox).join('')}</div></div>`; }).join('')}
+    ${groups.map(g => { const ls = locs.filter(l => l.type === g); if (!ls.length) return ''; return `<div class="lgroup"><div class="lg-t">${g === '保留場所' ? '保留棚(決まった場所・理由つき)' : esc(g)}</div><div class="lgrid">${ls.map(lbox).join('')}</div></div>`; }).join('')}
     ${loose.length ? `<div class="lgroup"><div class="lg-t">置き場所がまだ記録されていない台車</div><div class="lgrid">${loose.map(cbox).join('')}</div></div>` : ''}
     ${unplaced.length ? `<div class="lgroup"><div class="lg-t">まだ台車に載せていない(未受入)</div><div class="unpl">${unplaced.map(chip).join('')}</div></div>` : ''}
   </section>
@@ -186,6 +186,7 @@ function feedRow(f) {
   const delay = f.recv && d.t ? Math.max(0, f.recv - d.t) : null;
   const what = e.type === 'place' && !e.cart ? `<b class="mono">${esc(e.part)}</b> を <b>${esc(e.loc)}</b>${d.hold ? '(保留棚)' : ''} に置いた` : e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → 台車 <b>${esc(e.cart || '-')}</b> @ <b>${esc(e.loc)}</b>${d.from ? `<div class="small mute">移し替え(${esc(d.from)} から)</div>` : ''}` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ移動` : e.type === 'ng' ? `<b style="color:var(--pri)">計画外を検知(未登録)</b> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}<div class="small" style="color:var(--pri)">${(d.reasons || []).map(esc).join(' / ')}</div>` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${esc(d.to)}${d.reason ? '(' + esc(d.reason) + ')' : ''}`
     : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${stH(d.to === '解除' ? '未検査' : d.to)}${d.reason ? `(${esc(d.reason)}${d.planned ? '・計画' : ''})` : ''}${e.loc ? ` @ <b>${esc(e.loc)}</b>` : ''}`
+    : e.type === 'holdalert' ? `<b style="color:var(--s-hold)">保留の指示を現場へ</b>: <b class="mono">${esc(e.part)}</b>(${esc(d.reason || '')})`
     : e.type === 'split' ? `<b class="mono">${esc(e.part)}</b> を ${d.qtyOut} 出庫 ・ 残り ${d.qtyRest} に<b>新しいタグ ${esc(d.newTag)}</b>`
     : e.type === 'merge' ? `${(d.from || []).map(esc).join('・')} を<b>まとめて出庫</b> → 新しいタグ <b>${esc(e.tag)}</b>`
     : e.type === 'attach' ? `新しいタグ <b class="mono">${esc(e.tag)}</b> を貼付確認`
@@ -201,7 +202,7 @@ function feedRow(f) {
 function animateFlow(e, out) {
   if (VIEW !== 'dash') return;
   const lanes = out ? ['lane2', 'lane1'] : ['lane1', 'lane2'];
-  const label = e.type === 'place' ? `${e.part} → ${e.cart ? e.cart + ' @ ' : ''}${e.loc}` : e.type === 'cart' ? `台車 ${e.cart} → ${e.loc}` : e.type === 'ng' ? `⚠ 計画外 ${e.part || e.cart}` : e.type === 'status' ? `${e.part} ${e.data.to}` : e.type === 'order' ? `指示 ${e.cart} → ${e.loc}` : e.type === 'split' ? `分割 ${e.tag} → ${e.data.newTag}` : e.type === 'merge' ? `まとめ → ${e.tag}` : e.type === 'attach' ? `貼付 ${e.tag}` : e.type === 'alert' ? `優先アラート ${e.part}` : e.type === 'ack' ? `了解 ${e.part}` : '接続';
+  const label = e.type === 'place' ? `${e.part} → ${e.cart ? e.cart + ' @ ' : ''}${e.loc}` : e.type === 'cart' ? `台車 ${e.cart} → ${e.loc}` : e.type === 'ng' ? `⚠ 計画外 ${e.part || e.cart}` : e.type === 'status' ? `${e.part} ${e.data.to}` : e.type === 'order' ? `指示 ${e.cart} → ${e.loc}` : e.type === 'holdalert' ? `保留の指示 ${e.part}` : e.type === 'split' ? `分割 ${e.tag} → ${e.data.newTag}` : e.type === 'merge' ? `まとめ → ${e.tag}` : e.type === 'attach' ? `貼付 ${e.tag}` : e.type === 'alert' ? `優先アラート ${e.part}` : e.type === 'ack' ? `了解 ${e.part}` : '接続';
   const cls = (e.data || {}).pri || e.type === 'alert' || e.type === 'ng' ? 'p' : e.type === 'ack' ? 'a' : '';
   lanes.forEach((id, k) => setTimeout(() => {
     const lane = $(id); if (!lane) return;
@@ -306,7 +307,11 @@ function printSheet(cards) {
 VIEWS.locs = () => {
   const locs = Object.values(MAST.locs), carts = Object.values(ST.carts);
   return `<div class="head"><div><h1>台車・置き場所</h1><div class="mute small">台車タグを台車に、場所タグを棚・床・検査エリアに貼っておくと、現場で「部品 → 台車 → 置き場所」と読むだけで記録されます。</div></div>
-    <div class="row"><button class="btn primary" onclick="printCarts()">台車タグを印刷</button><button class="btn primary" onclick="printLocs()">場所タグを印刷</button></div></div>
+    <div class="row"><button class="btn primary" onclick="printCarts()">台車タグを印刷</button><button class="btn primary" onclick="printLocs()">場所タグを印刷</button><button class="btn hold" onclick="printShelves()">保留棚タグを印刷</button></div></div>
+  <section class="card sect shelfc"><h2>保留棚(決まった場所にある棚・台車は使わない)</h2><div class="mute small" style="margin-bottom:8px">保留棚には「保留棚タグ」(オレンジ)を貼ります。保留品を置いたら棚のタグを読み、何もないときに読むと、棚にある保留品と理由がスマホに出ます。</div>
+    <div class="row" style="margin-bottom:10px"><input type="text" id="h_code" placeholder="棚の番号 例: H-02" style="width:140px"><input type="text" id="h_name" placeholder="名称 例: 保留棚2" style="width:180px"><button class="btn hold" onclick="addShelf()">保留棚を追加</button></div>
+    <div class="shelves">${locs.filter(l => l.type === '保留場所').map(l => { const its = Object.values(ST.items).filter(i => !i.cart && i.loc === l.code && i.status === '保留');
+      return `<div class="shelf"><div class="sh-h"><span class="st st-保留">保留棚</span> <b class="mono">${esc(l.code)}</b> ${esc(l.name)}<span class="mute small" style="margin-left:auto">${its.length}点</span></div>${its.map(i => `<div class="sh-i"><b class="mono">${esc(i.part)}</b> ${esc(i.holdReason)}</div>`).join('') || '<div class="lb-e">空</div>'}</div>`; }).join('') || '<div class="mute small">まだありません</div>'}</div></section>
   <div class="grid2">
   <section><div class="card sect"><h2>台車を追加</h2><div class="row"><input type="text" id="c_code" placeholder="台車番号 例: C-03" style="width:130px"><input type="text" id="c_name" placeholder="名称" style="width:150px">
     <label class="row"><input type="checkbox" id="c_pz"> 優先台車</label><button class="btn primary" onclick="addCart()">追加</button></div></div>
@@ -331,8 +336,15 @@ async function addLoc() {
 function printCarts() {
   printSheet(Object.values(MAST.carts).map(c => `<div class="ptag cart ${c.pz ? 'p' : ''}"><div data-qr="${esc(cartQR(c))}" class="pq"></div><div class="pt"><div class="pk">台車</div><div class="pn mono">${esc(c.code)}</div><div class="pm">${esc(c.name)}</div>${c.pz ? '<div class="pp">優先台車</div>' : ''}</div></div>`));
 }
+async function addShelf() {
+  const code = $('h_code').value.trim().toUpperCase(); if (!code) return toast('棚の番号を入れてください', true);
+  try { await appendRows('locs', [[code, '保留場所', $('h_name').value.trim() || '保留棚', '']]); MAST = await readMasters(); rebuild(); toast('保留棚を追加しました'); render(); } catch (e) { toast(e.message, true); }
+}
+function printShelves() {
+  printSheet(Object.values(MAST.locs).filter(l => l.type === '保留場所').map(l => `<div class="ptag shelf"><div data-qr="${esc(shelfQR(l))}" class="pq"></div><div class="pt"><div class="pk">保留棚タグ</div><div class="pn mono">${esc(l.code)}</div><div class="pm">${esc(l.name)}</div><div class="pp hold">保留品はここへ</div></div></div>`));
+}
 function printLocs() {
-  printSheet(Object.values(MAST.locs).map(l => `<div class="ptag loc ${l.pz ? 'p' : ''}"><div data-qr="${esc(locQR(l))}" class="pq"></div><div class="pt"><div class="pk">置き場所 ${esc(l.type)}</div><div class="pn mono">${esc(l.code)}</div><div class="pm">${esc(l.name)}</div>${l.pz ? '<div class="pp">優先置き場</div>' : ''}</div></div>`));
+  printSheet(Object.values(MAST.locs).filter(l => l.type !== '保留場所').map(l => `<div class="ptag loc ${l.pz ? 'p' : ''}"><div data-qr="${esc(locQR(l))}" class="pq"></div><div class="pt"><div class="pk">置き場所 ${esc(l.type)}</div><div class="pn mono">${esc(l.code)}</div><div class="pm">${esc(l.name)}</div>${l.pz ? '<div class="pp">優先置き場</div>' : ''}</div></div>`));
 }
 
 /* ---------------- 移動の指示(例: 未検査を検査員Aの机へ) ----------------
@@ -386,13 +398,48 @@ function tagCardHtml(t, note) {
   return `<div class="ptag ${t.pri ? 'p' : ''}"><div data-qr="${esc(partQR(t))}" class="pq"></div><div class="pt"><div class="pk">部品タグ ${esc(t.tag)}${note ? ` ・ ${esc(note)}` : ''}</div><div class="pn mono">${esc(t.part)}</div><div class="pm">${esc(t.name)}</div><div class="pl">LOT ${esc(t.lot)} ・ ${esc(t.qty)}</div>${t.pri ? '<div class="pp">優先</div>' : ''}</div></div>`;
 }
 // 計画で保留(=検査しないで保留棚へ)の部品が、いまどうなっているか
+// 保留品の所在(優先品の所在の逆): 計画の保留も、現場で保留にしたものも、理由つきで
 function holdCard() {
-  const its = Object.values(ST.items).filter(i => i.planHold);
+  const its = Object.values(ST.items).filter(i => i.holdReason && i.status !== 'まとめ済');
   if (!its.length) return '';
-  const st = i => i.status === '保留' && (MAST.locs[i.loc] || {}).type === '保留場所' ? ['ok', `✓ 保留棚 ${esc(i.loc)}`]
-    : i.status === '保留' ? ['wait', '保留済・保留棚へ移動待ち'] : i.status === '未受入' ? ['wait', '未受入(届いたら保留棚へ)'] : ['ng', `未対応(いま ${esc(whereOf(i) || '-')})`];
-  return `<section class="card"><div class="ch"><h2>保留の指示(検査しないで保留棚へ)</h2><span class="mute small">計画から</span></div><div class="olist">${its.map(i => { const [c, t] = st(i);
-    return `<div class="orow hold-${c}"><span class="mono"><b>${esc(i.part)}</b></span><span>${esc(i.planHold)}</span><span class="ost">${t}</span></div>`; }).join('')}</div></section>`;
+  const onShelf = i => i.status === '保留' && (MAST.locs[i.loc] || {}).type === '保留場所';
+  const st = i => onShelf(i) ? ['ok', `✓ 保留棚 ${esc(i.loc)}`]
+    : i.status === '保留' ? ['wait', '保留中・保留棚へ移動待ち'] : i.status === '未受入' ? ['wait', '未受入(届いたら保留棚へ)'] : ['ng', `まだ保留棚にない(いま ${esc(whereOf(i) || '-')})`];
+  return `<section class="card holdc"><div class="ch"><h2>保留品の所在</h2><span class="mute small">${its.length} 件 ・ 計画と現場の保留</span></div><div class="olist">${its.map(i => { const [c, t] = st(i);
+    return `<div class="orow hold-${c}"><span class="mono"><b>${esc(i.part)}</b><div class="small mute">${esc(i.tag)}${i.planHold ? ' ・ 計画' : ' ・ 現場'}</div></span><span><span class="st st-保留">保留</span> ${esc(i.holdReason)}</span>
+      <span class="ost">${t}<br><button class="btn small" onclick="releaseHold('${esc(i.tag)}')">保留を解除</button></span></div>`; }).join('')}</div></section>`;
+}
+async function releaseHold(tag) {
+  const i = ST.items[tag]; if (!i) return;
+  if (!await ask(`${i.part}(${tag})の保留を解除しますか?${i.planHold ? '\n計画の保留理由も消します。' : ''}`, '解除する')) return;
+  try {
+    if (i.planHold) { const p = MAST.plans[i.part]; await appendRows('plans', [[i.part, p.carts.join('/'), p.locs.join('/'), p.memo, '']]); MAST = await readMasters(); }
+    if (i.status === '保留') await post(newEvent('status', { tag, part: i.part, lot: i.lot, data: { to: '解除' } }));
+    rebuild(); render(); toast('保留を解除しました');
+  } catch (e) { toast(e.message, true); }
+}
+/* 保留の指示(デモ): 優先アラートの逆。計画に保留理由を入れ、現場のスマホにすぐ知らせる */
+const HOLD_REASONS_PC = ['図面改訂待ち', '員数不足の確認待ち', '不良疑い', '書類不備', '顧客指示待ち'];
+async function openHoldOrder() {
+  const parts = [...new Set(Object.values(ST.items).filter(i => !i.holdReason && i.status !== 'まとめ済').map(i => i.part))].sort();
+  if (!parts.length) return toast('保留にできる部品がありません', true);
+  let part = parts[0], reason = HOLD_REASONS_PC[0];
+  const p = dialog(`<div class="hd-top">保留の指示(デモ)</div><div class="dlg-msg">次の部品を「検査しないで、保留棚へ」にします。計画に保留理由が入り、現場のスマホにすぐ知らせます。</div>
+    <label class="hd-l">部品<select id="hd_part" style="width:100%">${parts.map(x => `<option>${esc(x)}</option>`).join('')}</select></label>
+    <label class="hd-l">保留の理由<input type="text" id="hd_reason" value="${esc(reason)}"></label>
+    <div class="hd-chips">${HOLD_REASONS_PC.map(r => `<button class="btn" onclick="document.getElementById('hd_reason').value=this.textContent">${esc(r)}</button>`).join('')}</div>`,
+    [{ label: 'やめる' }, { label: '現場に知らせる', cls: 'primary', ok: true }]);
+  setTimeout(() => { const a = $('hd_part'), b = $('hd_reason'); if (a) a.onchange = () => { part = a.value; }; if (b) b.oninput = () => { reason = b.value; }; document.querySelectorAll('.hd-chips .btn').forEach(x => x.addEventListener('click', () => { reason = x.textContent; })); });
+  if ((await p).i !== 1 || !reason.trim()) return;
+  try {
+    await ensureTabs();
+    const pl = (MAST.plans || {})[part] || { carts: [], locs: [], memo: '' };
+    await appendRows('plans', [[part, pl.carts.join('/'), pl.locs.join('/'), pl.memo, reason.trim()]]);
+    MAST = await readMasters();
+    const name = (Object.values(ST.items).find(i => i.part === part) || {}).name || '';
+    await post(newEvent('holdalert', { part, data: { reason: reason.trim(), name } }));
+    toast(`${part} を保留の指示にしました(${reason.trim()})`);
+  } catch (e) { toast(e.message, true); }
 }
 function ordersCard() {
   const os = (ST.orders || []).slice(-5).reverse();

@@ -201,3 +201,8 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .mg-h{font-size:15px;color:#c3cede}.mg-h b{color:#fff}
 .mg-r{display:flex;justify-content:space-between;background:#fff;color:var(--ink);border-radius:8px;padding:6px 10px;font-size:15px}
 .mergebox{grid-template-columns:minmax(0,1fr)}.mergebox .regbtn{white-space:normal;font-size:18px}
+/* 保留(優先の逆) */
+.cand.k-shelf{border-left-color:#b45309}
+.cand.held{box-shadow:0 0 0 3px var(--s-hold),0 6px 20px rgba(0,0,0,.45)}
+.cd-hold{grid-column:1/-1;font-size:13px;font-weight:800;color:#fff;background:var(--s-hold);border-radius:6px;padding:2px 8px;margin-bottom:4px;justify-self:start}
+.cand{grid-template-areas:"h h" "k tap" "v tap" "s tap"}.cd-hold{grid-area:h}

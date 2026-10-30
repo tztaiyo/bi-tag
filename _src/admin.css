@@ -120,3 +120,16 @@ h1{font-size:21px;margin:0}h2{font-size:15px;margin:0}
 .kpis{margin-bottom:8px}
 .kpi.k-出庫済{border-left-color:#475569}.kpi.k-補用未検査{border-left-color:#2563eb}.kpi.k-補用検査済{border-left-color:#16a34a}.kpi.k-包装待ち{border-left-color:#a16207}.kpi.k-包装前{border-left-color:#c2410c}.kpi.k-包装済{border-left-color:#0e7490}.kpi.k-出荷待ち{border-left-color:#be185d}
 .newtag{border:2px solid #f0b429;background:#fffbea}
+/* 保留(優先の逆) */
+.btn.hold{background:var(--s-hold);border-color:var(--s-hold);color:#fff}
+.chip.h{border-color:var(--s-hold);background:#fff4e6}.chip .hr{color:#8a4b06;font-weight:700}
+.holdc{border:2px solid var(--s-hold)}
+.orow .btn.small{padding:2px 8px;font-size:12px;margin-top:4px}
+.hd-top{background:var(--s-hold);color:#fff;margin:-20px -20px 14px;padding:14px 20px;border-radius:14px 14px 0 0;font-weight:700;font-size:18px}
+.hd-l{display:grid;gap:4px;margin-top:10px;font-size:13px;font-weight:700;color:var(--ink2)}
+.hd-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.hd-chips .btn{padding:4px 10px;font-size:13px}
+.shelfc{border:2px solid var(--s-hold);margin-bottom:16px}
+.shelves{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.shelf{border:2px solid #e8b36d;border-radius:10px;background:#fff8ef;padding:10px;display:grid;gap:6px}
+.sh-h{display:flex;gap:6px;align-items:center}.sh-i{background:#fff;border:1px solid #f0d2a8;border-radius:8px;padding:5px 8px;font-size:14px}
+@media print{.ptag.shelf{border:2.5px solid #b45309}.pp.hold{background:#b45309}}

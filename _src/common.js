@@ -243,15 +243,19 @@ const isProcessLoc = (m, code) => PROCESS_LOC.has(((m && m.locs) || {})[code] &&
 const KIND_OF = Object.fromEntries(Object.entries(LOC_KIND).map(([k, v]) => [v, k]));
 function parseTag(text) {
   const s = String(text || '').trim();
-  const m = s.match(/^BI-([TLC]);(.*)$/); if (!m) return null;
+  const m = s.match(/^BI-([TLCH]);(.*)$/); if (!m) return null;
   const f = Object.fromEntries(m[2].split(';').map(p => { const i = p.indexOf('='); return [p.slice(0, i), p.slice(i + 1)]; }));
   if (m[1] === 'T') return f.ID ? { kind: 'part', tag: f.ID, part: f.PN || '', lot: f.LOT || '', qty: f.Q || '', pri: f.P === '1' } : null;
+  // 保留棚タグ: 台車とは関係なく、決まった場所にある棚(以前の場所タグ K=HOLD も保留棚として読む)
+  if (m[1] === 'H' || f.K === 'HOLD') return f.ID ? { kind: 'shelf', code: f.ID, type: '保留場所' } : null;
   if (m[1] === 'C' || f.K === 'CART') return f.ID ? { kind: 'cart', code: f.ID, pz: f.PZ === '1' } : null;   // 以前の台車タグ(BI-L;K=CART)も台車として読む
   return f.ID ? { kind: 'loc', code: f.ID, type: LOC_KIND[f.K] || f.K || '', pz: f.PZ === '1' } : null;
 }
 const partQR = t => `BI-T;ID=${t.tag};PN=${t.part};LOT=${t.lot};Q=${t.qty};P=${t.pri ? 1 : 0}`;
 const locQR = l => `BI-L;ID=${l.code};K=${KIND_OF[l.type] || 'AREA'};PZ=${l.pz ? 1 : 0}`;
 const cartQR = c => `BI-C;ID=${c.code};PZ=${c.pz ? 1 : 0}`;
+const shelfQR = l => `BI-H;ID=${l.code}`;
+const tagQR = l => l.type === '保留場所' ? shelfQR(l) : locQR(l);
 function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true }); }
 
 /* ---------------- イベント(出来事)と、いまの状態の組み立て ----------------
@@ -356,6 +360,8 @@ function buildState(masters, events) {
     it.loc = it.cart ? (carts[it.cart] || {}).loc || '' : it.direct;
     it.status = deriveStatus(it.status, ((masters.locs || {})[it.loc] || {}).type || '');   // 場所で決まるステータス
     const p = (masters.plans || {})[it.part]; it.planHold = p ? p.hold : '';
+    // 保留の理由(優先の逆): 保留中ならその理由、まだなら計画の保留理由
+    it.holdReason = it.status === '保留' ? (it.hold || it.planHold || '') : it.planHold || '';
   }
   return { items, carts, alerts, orders, devices };
 }
