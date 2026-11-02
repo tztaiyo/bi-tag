@@ -219,7 +219,7 @@ function setMode(m, fromSection) {
   $('issuebar').hidden = m !== '出庫'; if (m !== '出庫') F.merge = null; renderMerge();
   if (changed) { F.part = null; F.inspWait = null; F.moveWait = null; F.cart = null; F.loc = null; F.moveCand = false; F.shelf = null; closeSheet(); }   // 工程を変えたら固定も外す
   hint(); renderPair();
-  if (changed && $('msg')) msg(m === '検査' ? '検査: ② に検査済を置く<b>パレット</b>、③ に<b>自分の机</b>を読んで固定し、部品を1つずつ読んでください'
+  if ((changed || fromSection) && $('msg')) msg(m === '検査' ? '検査: ② に検査済を置く<b>パレット</b>、③ に<b>自分の机</b>(置き場所タグ)を読んで固定し、① 部品を1つずつ読んでください'
     : m === '置く' && F.section === '出庫→出荷' ? '棚出し: 出庫予定の部品 → パレット → 出庫仮置き の順に読んでください'
     : m === '出庫' ? '出庫: 出庫仮置きにある部品のタグを読むと <b>出庫済</b>。一部だけ出すときは、残りに新しいタグ(未入庫に戻す)'
     : m === '補用' ? '補用検査: 補用検査机にある部品のタグを読むと <b>補用検査済</b> になります'
@@ -280,7 +280,8 @@ function stageNG(sts, L) {
 }
 function renderPair() {
   const P = F.part, C = F.cart, L = F.loc, put = F.mode === '置く';
-  const want = put ? (pending() ? (!C ? 'C' : !L ? 'L' : '') : (C && !L ? 'L' : 'P')) : 'P';
+  const insp = F.mode === '検査';
+  const want = put ? (pending() ? (!C ? 'C' : !L ? 'L' : '') : (C && !L ? 'L' : 'P')) : insp ? (!C ? 'C' : !L ? 'L' : 'P') : (C && !L ? 'L' : 'P');
   // 計画と違うところは赤くして、計画の台車・置き場所を出す
   const recvStage = P && ['未受入', '未検査'].includes(statusOf(P.tag));
   const ra = readyAction();
@@ -291,18 +292,18 @@ function renderPair() {
   $('slotP').className = 'slot wide' + (P ? ' set' : '') + (P && isPriPart(P) ? ' isPri' : '') + (P && P.done ? ' done' : '') + (want === 'P' && (!P || P.done) ? ' want' : '');
   const hold = P ? holdReasonOf(P) : '';
   const stNow = P && !put ? stChip(statusOf(P.tag)) : '';
-  $('slotP').innerHTML = P ? `${hold ? `<div class="sl-band hold">保留 ・ 理由: ${esc(hold)}</div>` : ''}${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">${put ? '① ' : ''}部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${stNow}${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}</div><div class="sl-plan">予定: ${esc(nextPlan(statusOf(P.tag), (MAST.plans || {})[P.part], !!needHold(P)))}</div>${tagInfo(P.tag).note && !hold ? `<div class="sl-note">備考: ${esc(tagInfo(P.tag).note)}</div>` : ''}${tagInfo(P.tag).due ? `<div class="sl-note">出庫予定日: ${esc(tagInfo(P.tag).due)}</div>` : ''}`
-    : `<div class="sl-k">${put ? '① ' : ''}部品</div><div class="sl-e">部品タグ</div>`;
-  $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (put && want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
-  const insp = F.mode === '検査', ck = C ? (C.kind || carrierKind(MAST, C.code)) : '';
-  const cTitle = insp ? '② パレット(検査済を置く)' : '② 台車・パレット', lTitle = insp ? '③ 自分の机' : '③ 置き場所';
+  $('slotP').innerHTML = P ? `${hold ? `<div class="sl-band hold">保留 ・ 理由: ${esc(hold)}</div>` : ''}${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">① 部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${stNow}${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}</div><div class="sl-plan">予定: ${esc(nextPlan(statusOf(P.tag), (MAST.plans || {})[P.part], !!needHold(P)))}</div>${tagInfo(P.tag).note && !hold ? `<div class="sl-note">備考: ${esc(tagInfo(P.tag).note)}</div>` : ''}${tagInfo(P.tag).due ? `<div class="sl-note">出庫予定日: ${esc(tagInfo(P.tag).due)}</div>` : ''}`
+    : `<div class="sl-k">① 部品</div><div class="sl-e">部品タグ</div>`;
+  $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
+  const ck = C ? (C.kind || carrierKind(MAST, C.code)) : '';
+  const cTitle = '② 台車・パレット', lTitle = '③ 置き場所';   // どの工程でも同じ画面
   $('slotC').innerHTML = C ? `<div class="sl-k">${cTitle}</div><div class="sl-row"><span class="ck ${ck === 'パレット' ? 'pal' : ''}">${ck}</span><span class="sl-v mono">${esc(C.code)}</span></div><div class="sl-s">${esc(C.name || '')} ・ ${onCartCount(C.code)}点</div>${C.pz ? '<span class="pri">優先台車</span>' : ''}${planLine('台車')}<button class="unfix" onclick="clearCart()">✕ ${ck}を解除</button>`
-    : `<div class="sl-k">${cTitle}</div><div class="sl-e">${insp ? 'パレットのタグ' : '台車・パレットのタグ'}</div>`;
-  $('slotL').className = 'slot loc' + (L ? ' set' : '') + (L && L.pz ? ' pz' : '') + (put && want === 'L' ? ' want' : '') + (bad('置き場所') ? ' bad' : '');
+    : `<div class="sl-k">${cTitle}</div><div class="sl-e">台車・パレットのタグ</div>`;
+  $('slotL').className = 'slot loc' + (L ? ' set' : '') + (L && L.pz ? ' pz' : '') + (want === 'L' ? ' want' : '') + (bad('置き場所') ? ' bad' : '');
   $('slotL').innerHTML = L ? `<div class="sl-k">${lTitle}</div><div class="sl-v mono">${esc(L.code)}</div><div class="sl-s">${esc(L.type)} ${esc(L.name || '')}</div>${L.pz ? '<span class="pri">優先置き場</span>' : ''}${planLine('置き場所')}<button class="unfix" onclick="clearLoc()">✕ 置き場所を解除</button>`
-    : `<div class="sl-k">${lTitle}</div><div class="sl-e">${insp ? '机の場所タグ' : '場所タグ'}</div>`;
+    : `<div class="sl-k">${lTitle}</div><div class="sl-e">場所タグ</div>`;
   const S = F.shelf, onShelf = put && !!S;
-  $('slotS').hidden = !onShelf; $('pair2').hidden = !put || onShelf;
+  $('slotS').hidden = !onShelf; $('pair2').hidden = onShelf;
   if (S) $('slotS').innerHTML = `<div class="sl-k">保留棚(台車・置き場所は使わない)</div><div class="sl-row"><span class="sl-v mono">${esc(S.code)}</span><span class="sl-s">${esc(S.name || '保留棚')}</span></div><div class="sl-s">部品を読むと、この保留棚に登録します</div><button class="unfix" onclick="clearShelf()">✕ 保留棚を解除</button>`;
   const M = F.dest;
   $('slotM').className = 'slot loc dest' + (M ? ' set' : ' want');
@@ -809,7 +810,7 @@ function planError(r) {   // 計画と違う: 登録せずにエラー。管理�
   if (bl) F.loc = null;
   F.moveCand = false; LAST_NG = '';
   renderPair();
-  const freed = [bc && `台車 ${esc(bc.got)}`, bl && `置き場所 ${esc(bl.got)}`].filter(Boolean).join(' と ');
+  const freed = [bc && `${F.cart && F.cart.kind || "台車"} ${esc(bc.got)}`, bl && `置き場所 ${esc(bl.got)}`].filter(Boolean).join(' と ');
   const rows = [];
   if (bc) rows.push(['正しい台車', '○ ' + esc(bc.want.join('・')), 'ok'], ['読んだ台車', '✕ ' + esc(bc.got), 'bad']);
   if (bl) rows.push(['正しい置き場所', '○ ' + esc(bl.want.join('・')), 'ok'], ['読んだ置き場所', '✕ ' + esc(bl.got), 'bad']);
@@ -915,7 +916,7 @@ function renderRecent() {
   const el = $('recent'); if (!el) return;
   el.innerHTML = RECENT.slice(0, 12).map(r => {
     const e = r.ev, d = e.data || {};
-    const what = e.type === 'place' && !e.cart ? `<b class="mono">${esc(e.part)}</b> を${d.hold ? '保留棚' : ''} <b>${esc(e.loc)}</b> に置いた` : e.type === 'holdalert' ? `管理から保留の指示: <b class="mono">${esc(e.part)}</b>(${esc(d.reason || '')})` : e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `台車 <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${stChip(d.to === '入庫済' ? '保管' : d.to)}${d.reason ? `(${esc(d.reason)})` : ''}${e.loc ? ` @ ${esc(e.loc)}` : ''}` : e.type === 'split' ? `<b class="mono">${esc(e.part)}</b> を ${d.qtyOut} 出庫 ・ 残り ${d.qtyRest} に新しいタグ <b class="mono">${esc(d.newTag)}</b>` : e.type === 'merge' ? `${(d.from || []).length}点をまとめて出庫 → 新しいタグ <b class="mono">${esc(e.tag)}</b>` : e.type === 'attach' ? `新しいタグ <b class="mono">${esc(e.tag)}</b> を貼付確認` : e.type === 'ack' && d.order ? `指示を開始: 台車 ${esc(e.cart)} → ${esc(e.loc)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
+    const what = e.type === 'place' && !e.cart ? `<b class="mono">${esc(e.part)}</b> を${d.hold ? '保留棚' : ''} <b>${esc(e.loc)}</b> に置いた` : e.type === 'holdalert' ? `管理から保留の指示: <b class="mono">${esc(e.part)}</b>(${esc(d.reason || '')})` : e.type === 'place' ? `<b class="mono">${esc(e.part)}</b> → <b>${esc(e.cart || '')}</b> <span class="mute">@</span> <b>${esc(e.loc)}</b>` : e.type === 'cart' ? `${carrierKind(MAST, e.cart)} <b>${esc(e.cart)}</b> を <b>${esc(e.loc)}</b> へ` : e.type === 'dup' ? `<span class="dupt">登録済みのため記録せず</span> <b class="mono">${esc(e.part)}</b>${e.cart ? ` (${esc(e.cart)} @ ${esc(e.loc)})` : d.to ? ` (${esc(d.to)})` : ''}` : e.type === 'ng' ? `<span class="ngt">計画外を検知(未登録)</span> ${esc(e.part || '台車 ' + e.cart)} → ${esc(e.cart)} @ ${esc(e.loc)}` : e.type === 'status' ? `<b class="mono">${esc(e.part)}</b> を ${stChip(d.to === '入庫済' ? '保管' : d.to)}${d.reason ? `(${esc(d.reason)})` : ''}${e.loc ? ` @ ${esc(e.loc)}` : ''}` : e.type === 'split' ? `<b class="mono">${esc(e.part)}</b> を ${d.qtyOut} 出庫 ・ 残り ${d.qtyRest} に新しいタグ <b class="mono">${esc(d.newTag)}</b>` : e.type === 'merge' ? `${(d.from || []).length}点をまとめて出庫 → 新しいタグ <b class="mono">${esc(e.tag)}</b>` : e.type === 'attach' ? `新しいタグ <b class="mono">${esc(e.tag)}</b> を貼付確認` : e.type === 'ack' && d.order ? `指示を開始: 台車 ${esc(e.cart)} → ${esc(e.loc)}` : e.type === 'ack' ? 'アラートを確認' : esc(e.type);
     const st = r.state === 'skip' ? '<span class="skip">数は増えていません</span>' : r.state === 'sent' ? `<span class="sent">✓ 共有 ${(r.ms / 1000).toFixed(1)}秒 ・ ${r.bytes || ''}B</span>` : r.state === 'sending' ? '<span class="sending">送信中…</span>' : '<span class="queued">送信待ち(端末に保存)</span>';
     return `<div class="rc ${d.pri ? 'p' : ''} ${e.type === 'ng' || d.offPlan ? 'n' : ''}"><span class="t">${hms(e.at)}</span><span class="w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>${st}</div>`;
   }).join('') || '<div class="mute small">まだ操作はありません</div>';
