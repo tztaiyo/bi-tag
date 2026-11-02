@@ -3066,7 +3066,7 @@ function renderTop() {
   el.innerHTML = `<i class="dot ${s[0]}"></i>${s[1]}${!tokenValid() ? ' <button class="btn" onclick="login()">ログイン</button>' : ''}`;
 }
 const stH = s => `<span class="st" style="background:${stColor(s)}">${esc(s)}</span>`;
-const holdH = it => it.holdReason ? `<span class="pri holdb" title="${esc(it.holdReason)}">保留${it.tagHold ? '(タグ)' : ''}</span>` : '';
+const holdH = it => it.holdReason ? `<span class="pri holdb" title="${esc(it.holdReason)}">保留</span>` : '';
 const priH = it => it.pri ? `<span class="pri ${it.priSrc === 'アラート' ? 'alert' : ''}">優先${it.priSrc === 'アラート' ? '(アラート)' : ''}</span>` : '';
 const locName = c => { const l = MAST.locs[c]; return l ? `${l.type} ${c}` : c; };
 const cartOf = c => ST.carts[c] || { code: c, name: '', pz: false, loc: '' };
