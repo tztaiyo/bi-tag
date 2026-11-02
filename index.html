@@ -13581,6 +13581,12 @@ function onCode(text, src = 'cam') {
   const pri = isPriPart(P);
   if (F.mode === '検査') return priGate(P, () => inspect(P)) || inspect(P);
   if (MERGED[P.tag]) return stopSheet(P, 'このタグは使えません', [['まとめた先の新しいタグ', esc(MERGED[P.tag]), 'ok']], 'まとめて出庫したため、このタグは無効です。新しいタグを使ってください。', 'このタグは使えません。新しいタグを使ってください');
+  // 記録にないタグ(発行された番号と違うタグを貼った など)
+  if (F.mode !== '置く' && !MAST.tags[P.tag] && !(MAST.ship || {})[P.tag] && !TAGX[P.tag] && !STAT[P.tag] && !PLACED[P.tag]) {
+    const wait = Object.keys(TAGX).filter(t => !ATTACHED.has(t) && !MERGED[t]);
+    return stopSheet(P, 'このタグは記録にありません', [['読んだタグ', `<span class="mono">${esc(P.tag)}</span>`, 'bad'], ...wait.slice(0, 3).map(t => ['貼るはずの新しいタグ', `<span class="mono">${esc(t)}</span>(${esc(TAGX[t].kind)})`, 'ok'])],
+      wait.length ? '出庫で発行した新しいタグと番号が違います。スマホに出たQR、またはPCで印刷したタグを使ってください。' : '発行されていないタグです。PCの「タグ発行」を確認してください。', 'このタグは記録にありません');
+  }
   if (TAGX[P.tag] && !ATTACHED.has(P.tag)) {   // 発行した新しいタグを初めて読んだ = 貼ったことを確認
     ATTACHED.add(P.tag); send(newEvent('attach', { tag: P.tag, part: P.part, lot: P.lot }));
     if (F.attachWait === P.tag) {
@@ -13847,13 +13853,15 @@ function renderMerge() {
 }
 function doMerge() {
   const L = F.merge; if (!L || L.length < 2) return;
-  const first = L[0], same = L.every(x => x.part === first.part);
+  // 新しいタグの番号は、読んだ順に関係なく決める(いちばん小さいタグ番号 + -M1)
+  const first = [...L].sort((a, b) => a.tag.localeCompare(b.tag))[0], same = L.every(x => x.part === first.part);
   const qty = same ? L.reduce((a, x) => a + (+x.qty || 0), 0) : L.length;
   const part = same ? first.part : 'SET', name = same ? first.name : L.map(x => x.name || x.part).join('+');
   const p = PLACED[first.tag] || {}, newTag = nextTagId(first.tag, 'merge', knownTags());
   send(newEvent('merge', { tag: newTag, part, lot: first.lot, cart: p.cart || '', loc: locOf(first.tag), data: { from: L.map(x => x.tag), qty, name, pri: L.some(isPriPart) } }));
-  F.merge = []; renderMerge(); linkedFx();
-  newTagSheet({ tag: newTag, part, lot: first.lot, qty, pri: L.some(isPriPart) }, `まとめたもの(${qty})`, `${L.length}点をまとめて出庫しました。<b>元のタグ(${L.map(x => esc(x.tag)).join('・')})は使えなくなります</b>。`);
+  F.merge = null; document.querySelectorAll('#issuebar button').forEach(b => b.classList.toggle('on', b.dataset.iss === 'one'));   // まとめたら「1つずつ」に戻す
+  renderMerge(); linkedFx();
+  newTagSheet({ tag: newTag, part, lot: first.lot, qty, pri: L.some(isPriPart) }, `まとめたもの(${qty})`, `${L.length}点をまとめて出庫しました。<b>元のタグ(${L.map(x => esc(x.tag)).join('・')})は使えなくなります</b>。出庫のしかたは「1つずつ」に戻しました。`);
 }
 /* ---------------- 補用検査・包装(机・作業場にある部品を1つずつ) ---------------- */
 function spareInspect(P) {
