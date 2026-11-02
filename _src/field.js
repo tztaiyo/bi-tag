@@ -222,12 +222,12 @@ function setMode(m, fromSection) {
   const changed = F.mode !== m;
   F.mode = m; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('pair2').hidden = false; $('slotD').hidden = true; $('slotM').hidden = true;   // どの工程でも同じ「部品 / 台車・パレット → 置き場所」
-  $('issuebar').hidden = m !== '出庫'; if (m !== '出庫') F.merge = null; renderMerge();
+  $('issuebar').hidden = true; if (m !== '出庫') { F.merge = null; F.mergeGroup = null; } renderMerge();   // 出庫の数・まとめは計画で決まる(現場で選ばない)
   if (changed) { F.part = null; F.inspWait = null; F.moveWait = null; F.cart = null; F.loc = null; F.moveCand = false; F.shelf = null; closeSheet(); }   // 工程を変えたら固定も外す
   hint(); renderPair();
   if ((changed || fromSection) && $('msg')) msg(m === '検査' ? '検査: ② に検査済を置く<b>パレット</b>、③ に<b>自分の机</b>(置き場所タグ)を読んで固定し、① 部品を1つずつ読んでください'
     : m === '置く' && F.section === '出庫→出荷' ? '棚出し: 出庫予定の部品 → パレット → 出庫仮置き の順に読んでください'
-    : m === '出庫' ? '出庫: 出庫仮置きにある部品のタグを読むと <b>出庫済</b>。一部だけ出すときは、残りに新しいタグ(未入庫に戻す)'
+    : m === '出庫' ? '出庫: 部品のタグを読むと、<b>計画どおり</b>(出庫する数・まとめ)に出庫済になります。数を選んだり、まとめを押したりする必要はありません'
     : m === '補用' ? '補用検査: 補用検査机にある部品のタグを読むと <b>補用検査済</b> になります'
     : m === '包装' ? '包装: 包装作業場で包装したら、タグを読むと <b>包装済</b> になります' : '受入: 部品・台車・置き場所のタグを読んでください')
     + '<br><span class="small">台車・パレットを運ぶときは、どの画面でも ② 台車・パレット → ③ 置き場所 を読みます</span>';
@@ -250,7 +250,7 @@ function hint() {
   const t = !WORKER ? 'はじめに自分の社員証をスキャンしてください' : F.mode === '置く' && F.shelf ? `保留棚 ${F.shelf.code} に置く部品のタグを読んでください` : F.mode === '置く' ? nextStep()
     : F.mode === '検査' ? (F.holdPending ? `保留品を保留棚に置いて、保留棚のタグを読んでください` : !F.loc || F.loc.type !== '検査机' ? '③ に自分の机の場所タグを読んでください'
       : !F.cart || (F.cart.kind || carrierKind(MAST, F.cart.code)) !== 'パレット' ? '② に検査済を置くパレットのタグを読んでください' : `${F.loc.code} で検査した部品のタグを読んでください → パレット ${F.cart.code}`)
-    : F.mode === '出庫' ? (F.merge ? `まとめる部品のタグを続けて読んでください(いま ${F.merge.length}点)` : '出庫する部品のタグを読んでください')
+    : F.mode === '出庫' ? (F.merge ? `まとめる部品の残りを読んでください(${F.merge.length}/${(F.mergeNeed || []).length})` : '出庫する部品のタグを読むと、計画どおりに出庫します')
     : F.mode === '補用' ? '補用検査机にある部品のタグを読んでください' : '包装した部品のタグを読んでください';
   const h = $('camhint'); if (h) h.textContent = t;
 }
@@ -326,7 +326,7 @@ function renderPair() {
   $('slotP').className = 'slot wide' + (P ? ' set' : '') + (P && isPriPart(P) ? ' isPri' : '') + (P && P.done ? ' done' : '') + (want === 'P' && (!P || P.done) ? ' want' : '');
   const hold = P ? holdReasonOf(P) : '';
   const stNow = P && !put ? stChip(statusOf(P.tag)) : '';
-  $('slotP').innerHTML = P ? `${hold ? `<div class="sl-band hold">保留 ・ 理由: ${esc(hold)}</div>` : ''}${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">① 部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${stNow}${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}</div><div class="sl-plan">予定: ${esc(nextPlan(statusOf(P.tag), (MAST.plans || {})[P.part], !!needHold(P)))}</div>${tagInfo(P.tag).note && !hold ? `<div class="sl-note">備考: ${esc(tagInfo(P.tag).note)}</div>` : ''}${tagInfo(P.tag).due ? `<div class="sl-note">出庫予定日: ${esc(tagInfo(P.tag).due)}</div>` : ''}`
+  $('slotP').innerHTML = P ? `${hold ? `<div class="sl-band hold">保留 ・ 理由: ${esc(hold)}</div>` : ''}${put && PLACED[P.tag] && (pending() || P.dup) ? `<div class="sl-band">二重読み取り ・ 登録済み ・ いまの場所 ${esc(whereNow(PLACED[P.tag]))}</div>` : ''}<div class="sl-k">① 部品${P.done && !P.dup ? ' ✓ いま登録' : ''}</div><div class="sl-row"><span class="sl-v mono">${esc(P.part)}</span>${stNow}${isPriPart(P) ? `<span class="pri ${ALERT_PRI[P.part] && !P.pri ? 'alert' : ''}">優先${ALERT_PRI[P.part] && !P.pri ? '(管理から)' : ''}</span>` : ''}</div><div class="sl-s">${esc(partName(P))} ${P.lot ? '・' + esc(P.lot) : ''}${put && pending() && !plan && Object.keys(MAST.plans || {}).length ? ' <span class="sl-plan">計画なし</span>' : ''}</div><div class="sl-plan">予定: ${esc(nextPlan(statusOf(P.tag), (MAST.plans || {})[P.part], !!needHold(P)))}</div>${(MAST.ship || {})[P.tag] && ['出庫予定', '出庫仮置き'].includes(statusOf(P.tag)) ? `<div class="sl-plan">${esc(outPlanText(P.tag))}</div>` : ''}${tagInfo(P.tag).note && !hold ? `<div class="sl-note">備考: ${esc(tagInfo(P.tag).note)}</div>` : ''}${tagInfo(P.tag).due ? `<div class="sl-note">出庫予定日: ${esc(tagInfo(P.tag).due)}</div>` : ''}`
     : `<div class="sl-k">① 部品</div><div class="sl-e">部品タグ</div>`;
   $('slotC').className = 'slot cart' + (C ? ' set' : '') + (C && C.pz ? ' pz' : '') + (want === 'C' ? ' want' : '') + (bad('台車') ? ' bad' : '');
   const ck = C ? (C.kind || carrierKind(MAST, C.code)) : '';
@@ -451,7 +451,7 @@ function onCode(text, src = 'cam') {
     }
     toast(`新しいタグ ${P.tag} を確認しました`);
   }
-  if (F.mode === '出庫') return priGate(P, () => F.merge ? mergeAdd(P) : issue(P)) || (F.merge ? mergeAdd(P) : issue(P));
+  if (F.mode === '出庫') return priGate(P, () => issuePlanned(P)) || issuePlanned(P);
   if (F.mode === '補用') return priGate(P, () => spareInspect(P)) || spareInspect(P);
   if (F.mode === '包装') return priGate(P, () => pack(P)) || pack(P);
   F.part = P; F.moveCand = false;
@@ -656,6 +656,42 @@ function issueCheck(P) {   // 出庫できるか
   if (STATUSES_2.includes(st)) { dupSheet(P, `すでに出庫済です(${st})`); return false; }
   stopSheet(P, '出庫できる状態ではありません', [['いまの状態', st, 'bad']], '棚出しして、出庫仮置きに置いた部品だけ出庫できます。', '出庫できる状態ではありません'); return false;
 }
+/* 出庫は計画どおりに(現場では数・まとめを決めない)
+   出庫予定の「出庫数」(空欄=全部)と「まとめ」(同じ記号どうしを1つに)にしたがって、読むだけで進める */
+function outPlan(tag) {
+  const s = (MAST.ship || {})[tag] || {}, q = +qtyOf({ tag }) || 0;
+  const k = s.outQty && s.outQty < q ? s.outQty : q;
+  const group = s.group ? Object.values(MAST.ship).filter(x => x.group === s.group && !MERGED[x.tag]).map(x => x.tag) : [];
+  return { qty: q, k, group: s.group || '', groupTags: group };
+}
+function outPlanText(tag) {
+  const o = outPlan(tag);
+  if (o.group && o.groupTags.length > 1) return `計画: ${o.groupTags.join('・')} をまとめて出庫(新しいタグ1枚)`;
+  return o.k < o.qty ? `計画: ${o.qty} のうち ${o.k} を出庫(残り ${o.qty - o.k} に新しいタグ)` : `計画: 全部(${o.qty})を出庫`;
+}
+function issuePlanned(P) {
+  if (!issueCheck(P)) return;
+  const o = outPlan(P.tag);
+  if (o.group && o.groupTags.length > 1) {   // まとめて出庫(計画): 全部そろうと自動でまとめる
+    if (F.merge && F.mergeGroup !== o.group) return stopSheet(P, '先に、まとめる途中の部品をそろえてください', [['まとめ途中', esc(F.merge.map(x => x.tag).join('・')), 'warn'], ['あと読む', esc(F.mergeNeed.filter(t => !F.merge.some(x => x.tag === t)).join('・')), 'ok']], '計画で1つにまとめる部品を、続けて読んでください。');
+    if (!F.merge) { F.merge = []; F.mergeGroup = o.group; F.mergeNeed = o.groupTags; }
+    if (F.merge.find(x => x.tag === P.tag)) { beep('dup'); return msg(`${esc(P.tag)} はもう読みました。あと ${esc(F.mergeNeed.filter(t => !F.merge.some(x => x.tag === t)).join('・'))}`, 'dup'); }
+    F.merge.push({ ...P, qty: qtyOf(P), name: partName(P) }); F.part = { ...P, done: true, ctx: ctx() };
+    const rest = F.mergeNeed.filter(t => !F.merge.some(x => x.tag === t));
+    renderPair(); renderMerge();
+    if (!rest.length) return doMerge();
+    beep('ok'); flash('ok');
+    sheet('dup', '1', `まとめて出庫(計画) ${F.merge.length}/${F.mergeNeed.length}`, [['読んだ', `<span class="mono">${esc(F.merge.map(x => x.tag).join('・'))}</span>`, 'ok'], ['あと読む', `<span class="mono">${esc(rest.join('・'))}</span>`, 'warn']],
+      '計画で<b>1つにまとめて出庫</b>する部品です。残りを読むと、自動でまとめて新しいタグを1枚発行します。', '', 6000);
+    say(`まとめて出庫です。あと ${rest.length} 点読んでください`);
+    return msg(`まとめて出庫(計画): あと <b class="mono">${esc(rest.join('・'))}</b> を読んでください`, 'ok');
+  }
+  F.part = P; renderPair();
+  if (o.k < o.qty) {   // 一部だけ出庫(計画): 残りに新しいタグ
+    return doIssue(P, o.k);
+  }
+  doIssue(P, o.qty);
+}
 function issue(P) {
   if (!issueCheck(P)) return;
   const q = qtyOf(P);
@@ -706,14 +742,13 @@ function renderMerge() {
   // 画面の下にいつも出る「まとめて出庫」バー(見落とさないように)
   if (fab) {
     fab.hidden = !F.merge; document.body.classList.toggle('hasfab', !!F.merge);
-    if (F.merge) { const n = F.merge.length;
-      fab.innerHTML = n >= 2 ? `<button class="mfab-go" onclick="doMerge()"><span class="mfab-s">まとめる部品 ${n}点 ・ 読み終わったら押す</span>まとめて出庫する(新しいタグ1枚)</button>`
-        : `<div class="mfab-wait"><b>まとめる: ${n}点</b><span>あと${2 - n}点以上タグを読むと、ここに「まとめて出庫する」ボタンが出ます</span></div>`; }
+    if (F.merge) { const rest = (F.mergeNeed || []).filter(t => !F.merge.some(x => x.tag === t));
+      fab.innerHTML = `<div class="mfab-wait"><b>まとめて出庫(計画) ${F.merge.length}/${(F.mergeNeed || []).length}</b><span>あと <b class="mono">${esc(rest.join('・'))}</b> を読むと、自動でまとめます</span></div>`; }
   }
   if (!F.merge) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = `<div class="mg-h">まとめる部品 <b>${F.merge.length}点</b></div>${F.merge.map(x => `<div class="mg-r"><span class="mono"><b>${esc(x.part)}</b></span><span>${esc(x.tag)} ・ ${x.qty}</span></div>`).join('') || '<div class="mute small" style="color:#9fb0cc">まだありません。タグを読んでください</div>'}
-    ${F.merge.length >= 2 ? `<button class="btn regbtn" onclick="doMerge()">まとめて出庫(${F.merge.length}点 → 新しいタグ1枚)</button>` : ''}`;
+`;
 }
 function doMerge() {
   const L = F.merge; if (!L || L.length < 2) return;
@@ -723,9 +758,9 @@ function doMerge() {
   const part = same ? first.part : 'SET', name = same ? first.name : L.map(x => x.name || x.part).join('+');
   const p = PLACED[first.tag] || {}, newTag = nextTagId(first.tag, 'merge', knownTags());
   send(newEvent('merge', { tag: newTag, part, lot: first.lot, cart: p.cart || '', loc: locOf(first.tag), data: { from: L.map(x => x.tag), qty, name, pri: L.some(isPriPart) } }));
-  F.merge = null; document.querySelectorAll('#issuebar button').forEach(b => b.classList.toggle('on', b.dataset.iss === 'one'));   // まとめたら「1つずつ」に戻す
+  F.merge = null; F.mergeGroup = null; F.mergeNeed = null; document.querySelectorAll('#issuebar button').forEach(b => b.classList.toggle('on', b.dataset.iss === 'one'));   // まとめたら「1つずつ」に戻す
   renderMerge(); linkedFx();
-  newTagSheet({ tag: newTag, part, lot: first.lot, qty, pri: L.some(isPriPart) }, `まとめたもの(${qty})`, `${L.length}点をまとめて出庫しました。<b>元のタグ(${L.map(x => esc(x.tag)).join('・')})は使えなくなります</b>。出庫のしかたは「1つずつ」に戻しました。`);
+  newTagSheet({ tag: newTag, part, lot: first.lot, qty, pri: L.some(isPriPart) }, `まとめたもの(${qty})`, `${L.length}点をまとめて出庫しました。<b>元のタグ(${L.map(x => esc(x.tag)).join('・')})は使えなくなります</b>。(計画どおり)`);
 }
 /* ---------------- 補用検査・包装(机・作業場にある部品を1つずつ) ---------------- */
 function spareInspect(P) {
@@ -1169,7 +1204,7 @@ function renderCand() {
   const hr = t.kind === 'part' ? holdReasonOf(t) : '';
   el.innerHTML = `<button class="cand k-${t.kind} ${pri ? 'pri' : ''} ${hr ? 'held' : ''}" onclick="confirmCand()">
     ${hr ? `<span class="cd-hold">保留: ${esc(hr)}</span>` : ''}<span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}${done ? ` <span class="cd-reg">${esc(done)}</span>` : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
-    ${stNow ? `<span class="cd-now">いま: ${esc(stNow)}</span>` : ''}<span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
+    ${stNow ? `<span class="cd-now">いま: ${esc(stNow)}</span>` : ''}${t.kind === 'part' && F.mode === '出庫' && !done && (MAST.ship || {})[t.tag] ? `<span class="cd-now">${esc(outPlanText(t.tag))}</span>` : ''}<span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
 }
 function confirmCand() {
   const c = CAND; if (!c) return;

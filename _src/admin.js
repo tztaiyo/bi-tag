@@ -153,12 +153,18 @@ function progCard(items, sec) {
     <div class="pgs">${pr.map(([n, d, t]) => { const pc = t ? Math.round(d / t * 100) : 0;
       return `<div class="pgx ${pc === 100 ? 'full' : ''}"><div class="pgx-n">${esc(n)}</div><div class="pgx-b"><i style="width:${pc}%"></i></div><div class="pgx-p"><b>${pc}%</b> <span class="mute">${d}/${t}</span></div></div>`; }).join('') || '<div class="mute small">まだありません</div>'}</div></section>`;
 }
+// 出庫の計画(出庫数・まとめ)。現場はこのとおりに読むだけ
+function shipPlanH(tag) {
+  const s = (MAST.ship || {})[tag]; if (!s) return '';
+  const g = s.group ? Object.values(MAST.ship).filter(x => x.group === s.group).map(x => x.tag) : [];
+  return g.length > 1 ? `<div class="small" style="color:#0f766e;font-weight:700">計画: ${esc(g.join('+'))} をまとめて出庫</div>` : s.outQty && s.outQty < +s.qty ? `<div class="small" style="color:#0f766e;font-weight:700">計画: ${s.outQty} だけ出庫(残り ${+s.qty - s.outQty} は未入庫へ)</div>` : '';
+}
 // 計画から来た「今日の出庫予定」
 function shipCard() {
   const its = Object.values(MAST.ship || {}).map(s => ST.items[s.tag]).filter(Boolean).sort((a, b) => b.pri - a.pri);
   if (!its.length) return '';
   const day = d => d === today() ? '今日' : esc(d || '');
-  return `<section class="card shipc"><div class="ch"><h2>今日の出庫予定</h2><span class="mute small">計画から ・ ${its.length}件</span></div><table class="tbl"><tbody>${its.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td><b class="mono">${esc(i.part)}</b> ${priH(i)}<div class="small mute">${esc(i.tag)} ・ ${esc(i.name)} ・ ${esc(i.qty)}${i.note ? ` ・ ${esc(i.note)}` : ''}</div></td><td class="small">${day(i.due)}</td><td>${stH(i.status)}${placed(i) ? `<div class="small mute">${esc(whereOf(i))}</div>` : ''}</td></tr>`).join('')}</tbody></table></section>`;
+  return `<section class="card shipc"><div class="ch"><h2>今日の出庫予定</h2><span class="mute small">計画から ・ ${its.length}件</span></div><table class="tbl"><tbody>${its.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td><b class="mono">${esc(i.part)}</b> ${priH(i)}<div class="small mute">${esc(i.tag)} ・ ${esc(i.name)} ・ ${esc(i.qty)}${i.note ? ` ・ ${esc(i.note)}` : ''}</div>${shipPlanH(i.tag)}</td><td class="small">${day(i.due)}</td><td>${stH(i.status)}${placed(i) ? `<div class="small mute">${esc(whereOf(i))}</div>` : ''}</td></tr>`).join('')}</tbody></table></section>`;
 }
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 function dashLive() {
@@ -409,8 +415,8 @@ VIEWS.tags = () => {
   </tbody></table></div>
   ${Object.keys(MAST.ship || {}).length ? `<div class="head" style="margin-top:22px"><div><h2 style="margin:0">今日の出庫予定のタグ(② 出庫→出荷)</h2><div class="mute small">計画から来た「今日の出庫予定」。① とは別に、すぐ ② を見せるためのデモ用です。棚にある部品に貼ってあるタグです。</div></div>
     <button class="btn primary" onclick="printShip()">出庫予定のタグを印刷</button></div>
-  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>出庫予定日</th><th>優先・保留</th><th>状態</th></tr></thead><tbody>
-  ${Object.values(MAST.ship).map(t => { const i = ST.items[t.tag] || {}; return `<tr><td class="mono">${esc(t.tag)}</td><td class="mono">${esc(t.part)}</td><td>${esc(t.name)}${t.note ? `<div class="small note">${esc(t.note)}</div>` : ''}</td><td class="mono">${esc(t.lot)}</td><td>${esc(i.qty || t.qty)}</td><td class="small">${esc(t.due)}</td><td>${t.pri ? '<span class="pri">優先</span>' : ''} ${t.hold ? '<span class="pri holdb">保留</span>' : ''}</td><td>${i.status ? stH(i.status) : ''}</td></tr>`; }).join('')}
+  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>出庫予定日</th><th>出庫の計画</th><th>優先・保留</th><th>状態</th></tr></thead><tbody>
+  ${Object.values(MAST.ship).map(t => { const i = ST.items[t.tag] || {}; return `<tr><td class="mono">${esc(t.tag)}</td><td class="mono">${esc(t.part)}</td><td>${esc(t.name)}${t.note ? `<div class="small note">${esc(t.note)}</div>` : ''}</td><td class="mono">${esc(t.lot)}</td><td>${esc(i.qty || t.qty)}</td><td class="small">${esc(t.due)}</td><td>${shipPlanH(t.tag) || '<span class="small mute">全部</span>'}</td><td>${t.pri ? '<span class="pri">優先</span>' : ''} ${t.hold ? '<span class="pri holdb">保留</span>' : ''}</td><td>${i.status ? stH(i.status) : ''}</td></tr>`; }).join('')}
   </tbody></table></div>` : ''}
   ${reissued().length ? `<div class="head" style="margin-top:22px"><div><h2 style="margin:0">出庫で発行した新しいタグ</h2><div class="mute small">一部だけ出庫したときの残り・まとめて出庫したものに、現場のスマホが発行したタグです。印刷して貼り、現場で読むと「貼付済」になります。</div></div>
     <div class="row"><button class="btn" onclick="printReissued(true)">すべて印刷</button><button class="btn primary" onclick="printReissued()">未貼付だけ印刷</button></div></div>
@@ -668,9 +674,9 @@ VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
 function shipRows() {
   const d = today(), memo = 'F3 #12 エンジン組立用';
   return [['S0001', 'IHF-30113-A', 'タービンブレード 2段', 'L2610-11', 3, d, '', '', memo],
-    ['S0002', 'IHF-41005-C', '燃料ノズル', 'J2610-31', 4, d, '', '', memo + '(2本だけ出庫 → 残りに新しいタグ)'],
-    ['S0003', 'IHF-60340-A', 'シールリング', 'J2610-32', 10, d, '', '', memo + '(S0004 とまとめて出庫)'],
-    ['S0004', 'IHF-60340-A', 'シールリング', 'J2610-33', 5, d, '', '', memo + '(S0003 とまとめて出庫)'],
+    ['S0002', 'IHF-41005-C', '燃料ノズル', 'J2610-31', 4, d, '', '', memo + '(2本だけ出庫 → 残りに新しいタグ)', 2, ''],
+    ['S0003', 'IHF-60340-A', 'シールリング', 'J2610-32', 10, d, '', '', memo + '(S0004 とまとめて出庫)', '', 'M1'],
+    ['S0004', 'IHF-60340-A', 'シールリング', 'J2610-33', 5, d, '', '', memo + '(S0003 とまとめて出庫)', '', 'M1'],
     ['S0005', 'HW-10011-M6', '六角ボルト M6', 'B2610-11', 50, d, '', '', memo],
     ['S0006', 'IHF-52001-D', 'ベアリング No.3', 'R2610-31', 2, d, '優先', '', '至急(試運転の前倒し)']];
 }
@@ -703,6 +709,9 @@ async function seedDemo(quiet) {
     const nc = C.filter(c => !have.has(c[0])); if (nc.length) await appendRows('carts', nc);
     if (!Object.keys(MAST.plans || {}).length) await appendRows('plans', DEMO_PLAN);
     const ns = S.filter(r => !(MAST.ship || {})[r[0]]); if (ns.length) await appendRows('ship', ns);
+    // 前の版で入れた出庫予定に「出庫数・まとめ」がなければ足す(同じタグは下の行が使われる)
+    const us = S.filter(r => { const x = (MAST.ship || {})[r[0]]; return x && ((x.outQty || '') !== (r[9] || '') || (x.group || '') !== (r[10] || '')); }).map(r => { const x = MAST.ship[r[0]]; return [r[0], x.part, x.name, x.lot, x.qty, x.due, x.pri ? '優先' : '', x.hold ? '保留' : '', x.note, r[9] || '', r[10] || '']; });
+    if (us.length) await appendRows('ship', us);
     const nw = W.filter(r => !(MAST.staff || {})[r[0]]); if (nw.length) await appendRows('staff', nw);
 
     MAST = await readMasters(); rebuild(); if (quiet) return;
