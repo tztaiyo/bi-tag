@@ -400,12 +400,13 @@ function buildState(masters, events) {
     } else if (e.type === 'split') {   // 出庫で分けた: 元のタグは出庫分、パレットから離れる残りは新しいタグで「未入庫」へ
       const o = item(e.tag, e), d = e.data, nw = item(d.newTag, e);
       o.qty = String(d.qtyOut); o.status = '出庫済'; o.since = e.at; o.by = e.device; o.hist.push(e);
-      Object.assign(nw, { name: o.name || d.name || '', qty: String(d.qtyRest), status: '未入庫', cart: '', direct: e.loc, origin: e.tag, reissue: '分割', since: e.at, by: e.device, sec: 2, lt: {} });
+      Object.assign(nw, { pri: o.pri || !!d.pri, priSrc: o.priSrc || (d.pri ? '計画' : ''), name: o.name || d.name || '', qty: String(d.qtyRest), status: '未入庫', cart: '', direct: e.loc, origin: e.tag, reissue: '分割', since: e.at, by: e.device, sec: 2, lt: {} });
       nw.hist.push(e);
     } else if (e.type === 'merge') {   // 出庫でまとめた: 元のタグは使えなくなり、新しいタグ1枚に(元のパレットに載る)
       const d = e.data, nw = item(e.tag, e), f0 = item((d.from || [])[0] || e.tag);
       for (const f of d.from || []) { const it = item(f); Object.assign(it, { status: 'まとめ済', mergedTo: e.tag, cart: '', direct: '' }); it.hist.push(e); }
-      Object.assign(nw, { name: d.name || '', qty: String(d.qty), status: '出庫済', cart: e.cart || '', direct: e.cart ? '' : e.loc, origin: (d.from || []).join('+'), reissue: 'まとめ', since: e.at, by: e.device, sec: 2, lt: { out: f0.lt.out } });
+      const fp = (d.from || []).map(f => item(f)).find(x => x.pri);
+      Object.assign(nw, { pri: !!fp || !!d.pri, priSrc: fp ? fp.priSrc : d.pri ? '計画' : '', name: d.name || '', qty: String(d.qty), status: '出庫済', cart: e.cart || '', direct: e.cart ? '' : e.loc, origin: (d.from || []).join('+'), reissue: 'まとめ', since: e.at, by: e.device, sec: 2, lt: { out: f0.lt.out } });
       nw.hist.push(e);
     } else if (e.type === 'attach') {
       const it = item(e.tag, e); it.attached = true; it.hist.push(e);

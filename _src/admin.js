@@ -155,7 +155,7 @@ function progCard(items, sec) {
 }
 // 計画から来た「今日の出庫予定」
 function shipCard() {
-  const its = Object.values(MAST.ship || {}).map(s => ST.items[s.tag]).filter(Boolean);
+  const its = Object.values(MAST.ship || {}).map(s => ST.items[s.tag]).filter(Boolean).sort((a, b) => b.pri - a.pri);
   if (!its.length) return '';
   const day = d => d === today() ? '今日' : esc(d || '');
   return `<section class="card shipc"><div class="ch"><h2>今日の出庫予定</h2><span class="mute small">計画から ・ ${its.length}件</span></div><table class="tbl"><tbody>${its.map(i => `<tr class="${i.pri ? 'prirow' : ''}"><td><b class="mono">${esc(i.part)}</b> ${priH(i)}<div class="small mute">${esc(i.tag)} ・ ${esc(i.name)} ・ ${esc(i.qty)}${i.note ? ` ・ ${esc(i.note)}` : ''}</div></td><td class="small">${day(i.due)}</td><td>${stH(i.status)}${placed(i) ? `<div class="small mute">${esc(whereOf(i))}</div>` : ''}</td></tr>`).join('')}</tbody></table></section>`;
@@ -181,7 +181,8 @@ function dashLive() {
     return `<div class="lbox ${l.pz ? 'pz' : ''}"><div class="lb-h"><b class="mono">${esc(l.code)}</b><span>${esc(l.name)}</span>${l.pz ? '<span class="pri">優先置き場</span>' : ''}</div>${cs.map(cbox).join('')}${ds.map(chip).join('')}${cs.length || ds.length ? '' : '<div class="lb-e">なし</div>'}</div>`; };
   const loose = carts.filter(c => !c.loc);
   const unplaced = items.filter(i => !placed(i) && i.sec === 1 && i.status === '未受入');
-  const pris = items.filter(i => i.pri && ['未受入', '未検査', '保留'].includes(i.status));
+  const DONE = ['入庫待ち(検査済)', '入庫待ち(包装済)', '未入庫', 'まとめ済'];
+  const pris = items.filter(i => i.pri && !DONE.includes(i.status)).sort((a, b) => a.sec - b.sec);
   const kpi = s => `<div class="kpi" style="border-left-color:${stColor(s)}"><div>${esc(s)}</div><b>${cnt[s]}</b></div>`;
   return `<div class="kpirow"><span class="kpil">① 入荷→入庫<small>入庫待ち(検査済)で終わり</small></span><div class="kpis k5">${STATUSES_1.map(kpi).join('')}</div></div>
   <div class="kpirow"><span class="kpil">② 出庫→出荷<small>今日の出庫予定から</small></span><div class="kpis k10">${STATUSES_2.map(kpi).join('')}</div></div>
@@ -196,8 +197,8 @@ function dashLive() {
     ${shipCard()}
     ${holdCard()}
     <section class="card"><div class="ch"><h2>通信モニター</h2><span class="mute small">新しい順</span></div><div class="feed">${FEED.slice(0, 16).map(feedRow).join('') || '<div class="mute small">まだ受信していません</div>'}</div></section>
-    <section class="card"><div class="ch"><h2>優先品の所在</h2><span class="mute small">${pris.length} 件</span></div>
-      ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${placed(i) && !priOK(i) ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${placed(i) ? esc(whereOf(i)) : '<span class="mute">未記録</span>'}${placed(i) && !priOK(i) ? '<div class="small" style="color:var(--pri)">優先台車・優先置き場ではない</div>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}
+    <section class="card"><div class="ch"><h2>優先品の所在</h2><span class="mute small">${pris.length} 件 ・ 入庫待ちになるまで</span></div>
+      ${pris.length ? `<table class="tbl"><tbody>${pris.map(i => `<tr class="${placed(i) && !priOK(i) ? 'warnrow' : ''}"><td><b class="mono">${esc(i.part)}</b><div class="small mute">${esc(i.priSrc)}で優先</div></td><td>${stH(i.status)}</td><td>${placed(i) ? esc(whereOf(i)) : '<span class="mute">未記録</span>'}${placed(i) && !priOK(i) ? `<div class="small" style="color:var(--pri)">優先の${i.cart ? CK(i.cart) : '置き場所'}ではない</div>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mute small">ありません</div>'}
     </section>
   </div></div>`;
 }
@@ -605,7 +606,7 @@ async function seedDemo(quiet) {
     ['D-01', '検査机', '検査員Aの机', ''], ['D-02', '検査机', '検査員Bの机', ''], ['H-01', '保留場所', '保留棚', ''], ['N-01', '入庫前', '入庫前置き場', ''], ['OT-01', '出庫仮置き', '出庫 仮置き', ''],
     ['SP-T', '補用仮置き', '補用検査 仮置き', ''], ['SP-D', '補用検査机', '補用検査員の机', ''], ['PK-T', '包装仮置き', '包装 仮置き', ''], ['PK-W', '包装作業場', '包装作業場', ''], ['S-01', '出荷前', '出荷前置き場', '']];
   const C = [['C-01', '通常台車1', '', '台車'], ['C-02', '通常台車2', '', '台車'], ['CP-01', '優先台車1', '○', '台車'],
-    ['P-01', 'パレット1', '', 'パレット'], ['P-02', 'パレット2', '', 'パレット'], ['P-03', 'パレット3', '', 'パレット'], ['P-04', 'パレット4', '', 'パレット']];
+    ['PP-01', '優先パレット1', '○', 'パレット'], ['PP-02', '優先パレット2', '○', 'パレット'], ['P-01', 'パレット1', '', 'パレット'], ['P-02', 'パレット2', '', 'パレット'], ['P-03', 'パレット3', '', 'パレット'], ['P-04', 'パレット4', '', 'パレット']];
   // ② 出庫→出荷 のデモ用「今日の出庫予定」(① とは別。計画から来るリスト)
   const S = shipRows();
   let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +((k.match(/^T(\d+)$/) || [])[1] || 0)));
