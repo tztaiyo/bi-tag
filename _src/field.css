@@ -229,3 +229,11 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .pg-n{font-size:9.5px;line-height:1.15;color:#9fb0cc;word-break:keep-all;overflow-wrap:anywhere}
 .rt-r.prit{border-left:4px solid #d21f1f;padding-left:8px;background:rgba(210,31,31,.06)}
 .sh-btns{display:grid;gap:10px;margin-top:12px}.sh-btns .btn{min-height:54px;font-size:18px;font-weight:700}
+.ok .sh-ic{background:#15803d}.ok .sh-t{color:#15803d}
+.wkbar{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:14px;background:#13233d;color:#e6edf8;border-bottom:1px solid #24324d}
+.wkbar .wk-k{font-size:11px;font-weight:800;background:#2b6cb0;color:#fff;border-radius:4px;padding:1px 6px}
+.wkbar b{font-size:15px}.wkbar .wk-id,.wkbar .wk-r{font-size:12px;color:#9fb0cc}
+.wkbar .btn{margin-left:auto;padding:4px 12px;font-size:13px}
+.wkbar.off{background:#7f1d1d;animation:wkp 1.6s ease-in-out infinite}.wkbar.off .wk-k{background:#fff;color:#7f1d1d}
+@keyframes wkp{50%{background:#991b1b}}
+.cand.k-worker{border-left-color:#7c3aed}

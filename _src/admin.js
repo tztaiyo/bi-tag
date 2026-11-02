@@ -98,7 +98,7 @@ async function post(ev) {   // 管理画面からのイベント(アラート・
 }
 
 /* ---------------- 画面の骨組み ---------------- */
-const NAV = [['dash', '現場の状況'], ['items', '部品一覧'], ['lt', 'リードタイム'], ['tags', 'タグ発行'], ['locs', '台車・置き場所'], ['plan', '計画'], ['devices', '現場端末'], ['setup', '設定']];
+const NAV = [['dash', '現場の状況'], ['items', '部品一覧'], ['check', '計画との照合'], ['lt', 'リードタイム'], ['tags', 'タグ発行'], ['locs', '台車・置き場所'], ['plan', '計画'], ['devices', '現場端末'], ['setup', '設定']];
 function render() {
   $('app').innerHTML = `<header class="top"><div class="brand">受入・検査 管理画面<small>BLUE IMPULSE</small></div>
     <nav class="nav">${NAV.map(([k, n]) => `<a href="#${k}" class="${VIEW === k ? 'on' : ''}">${n}</a>`).join('')}</nav>
@@ -106,7 +106,7 @@ function render() {
     <main class="wrap" id="main">${LOADED ? (VIEWS[VIEW] || VIEWS.dash)() : '<div class="card empty">スプレッドシートを読み込んでいます…</div>'}</main>`;
   renderTop(); afterRender();
 }
-function renderLive() { if (!LOADED) return; const m = $('main'); if (!m) return; if (VIEW === 'dash') { if (!$('live')) return render(); $('live').innerHTML = dashLive(); afterRender(); } else if (VIEW === 'devices' || VIEW === 'items') { m.innerHTML = VIEWS[VIEW](); afterRender(); } }
+function renderLive() { if (!LOADED) return; const m = $('main'); if (!m) return; if (VIEW === 'dash') { if (!$('live')) return render(); $('live').innerHTML = dashLive(); afterRender(); } else if (VIEW === 'devices' || VIEW === 'items' || VIEW === 'check') { m.innerHTML = VIEWS[VIEW](); afterRender(); } }
 function afterRender() { document.querySelectorAll('[data-qr]').forEach(el => { if (!el.innerHTML) el.innerHTML = qrSvg(el.dataset.qr); }); }
 function renderTop() {
   const el = $('topst'); if (!el) return;
@@ -166,7 +166,7 @@ function dashLive() {
   const cnt = Object.fromEntries(STATUSES.map(s => [s, items.filter(i => i.status === s).length]));
   const devs = Object.values(ST.devices).filter(d => d.name !== PC_NAME()).sort((a, b) => b.lastT - a.lastT);
   setTimeout(() => {
-    const fd = $('fn-devs'); if (fd) fd.innerHTML = devs.slice(0, 4).map(d => `<div class="fdev"><i class="dot ${Date.now() - d.lastT < 120000 ? 'on' : ''}"></i>${esc(d.name)}</div>`).join('') || '<div class="fn-s">まだ接続なし</div>';
+    const fd = $('fn-devs'); if (fd) fd.innerHTML = devs.slice(0, 4).map(d => `<div class="fdev"><i class="dot ${Date.now() - d.lastT < 120000 ? 'on' : ''}"></i>${esc(d.name)}${d.worker ? ` <b>${esc(d.worker)}</b>` : ''}</div>`).join('') || '<div class="fn-s">まだ接続なし</div>';
     const ps = $('fn-pcst'); if (ps) ps.textContent = `受信 ${EVENTS.length} 件`;
   });
   const chip = i => { const ng = offPlan(i); return `<div class="chip ${i.pri ? 'p' : ''} ${i.holdReason ? 'h' : ''} ${ng.length ? 'ng' : ''} ${Date.now() - (FRESH[i.tag] || 0) < 6000 ? 'fresh' : ''}" title="${ng.length ? esc('計画外: ' + ngText(ng).join(' / ')) : ''}" onclick="showItem('${esc(i.tag)}')"><b class="mono">${ng.length ? '⚠ ' : ''}${esc(i.part)}</b><span>${i.holdReason ? `<b class="hr">保留: ${esc(i.holdReason)}</b>` : esc(i.name)}</span>${stH(i.status)}</div>`; };
@@ -213,10 +213,10 @@ function feedRow(f) {
     : e.type === 'attach' ? `新しいタグ <b class="mono">${esc(e.tag)}</b> を貼付確認`
     : e.type === 'order' ? `<b>移動の指示</b>: 台車 <b>${esc(e.cart)}</b> → <b>${esc(d.toName || e.loc)}</b>(${esc(e.loc)})`
     : e.type === 'ack' && d.order ? `指示を開始: 台車 <b>${esc(e.cart)}</b> → ${esc(e.loc)}`
-    : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : e.type === 'reset' ? '<b>デモをリセット</b>(登録の記録を消去)' : esc(e.type);
+    : e.type === 'alert' ? `優先アラートを現場へ: <b class="mono">${esc(e.part)}</b>` : e.type === 'ack' ? `アラートを了解: <b class="mono">${esc(e.part)}</b>` : e.type === 'hello' ? '端末が接続' : e.type === 'worker' ? (d.off ? '担当を終了' : `社員証: <b>${esc(d.worker)}</b>(${esc(d.wid)})が担当${d.from ? `(${esc(d.from)} から交代)` : ''}`) : e.type === 'reset' ? '<b>デモをリセット</b>(登録の記録を消去)' : esc(e.type);
   const dir = f.out || e.device === PC_NAME() ? 'out' : 'in';
   return `<div class="fr ${dir} ${d.pri ? 'p' : ''} ${f.recv && Date.now() - f.recv < 5000 ? 'new' : ''}"><span class="fr-t">${hms(e.at)}</span>
-    <span class="fr-d">${dir === 'out' ? '管理 → 現場' : esc(e.device) + ' →'}</span><span class="fr-w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>
+    <span class="fr-d">${dir === 'out' ? '管理 → 現場' : `${d.worker ? `<b>${esc(d.worker)}</b> ` : ''}${esc(e.device)} →`}</span><span class="fr-w">${what}${d.pri ? ' <span class="pri">優先</span>' : ''}${d.offPlan ? ' <span class="pri">計画外</span>' : ''}</span>
     <span class="fr-m">${e.bytes || eventRow(e).join('').length} B${delay !== null && delay < 120000 ? ` ・ 遅れ ${(delay / 1000).toFixed(1)}秒` : ''}${f.ms ? ` ・ 送信 ${(f.ms / 1000).toFixed(1)}秒` : ''}</span></div>`;
 }
 // 通信の流れのアニメーション: 端末 → Google → この画面(アラートは逆向き)
@@ -294,13 +294,72 @@ async function exportLT() {   // 「リードタイム」の表に書き出す(�
 }
 
 /* ---------------- 部品一覧・履歴 ---------------- */
+// ① 入荷→入庫 と ② 出庫→出荷 は別の画面にする(#items-1 / #items-2)
+const secTabs = (view, cur, counts) => `<div class="sectabs">${[['1', '① 入荷 → 入庫'], ['2', '② 出庫 → 出荷']].map(([k, n]) => `<a href="#${view}-${k}" class="${cur === k ? 'on' : ''}">${n}<span>${counts[k]}</span></a>`).join('')}</div>`;
+const secItems = sec => Object.values(ST.items).filter(i => (sec === '2' ? i.sec === 2 : i.sec !== 2));
+const byH = i => i.since ? `${esc(hms(i.since))}<div class="mute">${esc(i.by)}</div>` : '';
+const carrierH = i => i.cart ? `<span class="nw"><b class="mono">${esc(i.cart)}</b>${cartOf(i.cart).pz ? ' <span class="pri">優先</span>' : ''}</span><div class="small mute">${esc(CK(i.cart))}</div>` : '<span class="mute">-</span>';
+const locH = i => i.loc ? `<span class="nw">${esc((MAST.locs[i.loc] || {}).type || '')}</span><div class="mono nw"><b>${esc(i.loc)}</b></div>` : '<span class="mute">未記録</span>';
+const nameH = i => `${esc(i.name)}${i.holdReason ? `<div class="small note"><b>保留理由:</b> ${esc(i.holdReason)}</div>` : ''}${i.note && i.note !== i.holdReason ? `<div class="small note">備考: ${esc(i.note)}</div>` : ''}`;
 VIEWS.items = () => {
-  const items = Object.values(ST.items).sort((a, b) => (b.pri - a.pri) || String(b.since).localeCompare(String(a.since)));
-  return `<div class="head"><div><h1>部品一覧</h1><div class="mute small">優先・保留(優先の逆)・備考は計画から入ってきます(PCで選ぶものではありません)。備考は理由の見える化のためで、現場のスマホにも同じものが出ます。「いまの予定」はステータスが進むと一緒に進みます。</div></div><span class="mute small">${items.length} 件</span></div>
-  <div class="card flush"><table class="tbl"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>台車</th><th>置き場所</th><th>いまの予定</th><th>最終更新</th><th></th></tr></thead><tbody>
-  ${items.filter(i => i.status !== 'まとめ済' || true).map(i => `<tr class="${i.pri ? 'prirow' : ''} ${i.holdReason ? 'holdrow' : ''}"><td class="mono">${esc(i.tag)}</td><td><b class="mono">${esc(i.part)}</b> ${priH(i)} ${holdH(i)}</td><td>${esc(i.name)}${i.note || i.holdReason ? `<div class="small note">${i.holdReason ? `<b>保留理由:</b> ${esc(i.holdReason)}` : ''}${i.note && i.note !== i.holdReason ? `<div>備考: ${esc(i.note)}</div>` : ''}</div>` : ''}</td><td class="mono">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
-    <td>${stH(i.status)}${i.mergedTo ? `<div class="small mute">→ ${esc(i.mergedTo)}</div>` : ''}${i.reissue ? `<div class="small mute">${i.reissue === '分割' ? '分割' : 'まとめ'}: ${esc(i.origin)}</div>` : ''}</td><td class="mono">${i.cart ? `<b>${esc(i.cart)}</b>${cartOf(i.cart).pz ? ' <span class="pri">優先</span>' : ''}` : '<span class="mute">-</span>'}</td><td>${i.loc ? esc(locName(i.loc)) : '<span class="mute">未記録</span>'}</td><td class="small"><b>${esc(i.next)}</b>${i.status === '未受入' || i.status === '未検査' ? `<div class="mute">受入の計画: ${planH(planOf(i))}</div>` : ''}${offPlan(i).length ? '<div style="color:var(--pri);font-weight:700">✗ 受入の計画と違う</div>' : ''}</td><td class="small">${esc(i.since ? hms(i.since) + ' ' + i.by : '')}</td>
+  const sec = ARG === '2' ? '2' : '1';
+  const cnt = { 1: secItems('1').length, 2: secItems('2').length };
+  const items = secItems(sec).sort((a, b) => (b.pri - a.pri) || ((a.status === 'まとめ済') - (b.status === 'まとめ済')) || String(b.since).localeCompare(String(a.since)));
+  const head = `<div class="head"><div><h1>部品一覧</h1><div class="mute small">優先・保留・備考は計画から入ってきます(PCで選ぶものではありません)。「いまの予定」はステータスが進むと一緒に進みます。計画どおりかは「計画との照合」で確認できます。</div></div><span class="mute small">${items.length} 件</span></div>${secTabs('items', sec, cnt)}`;
+  if (sec === '1') return head + `<div class="card flush"><table class="tbl items"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>ロット</th><th>数量</th><th>ステータス</th><th>台車・パレット</th><th>置き場所</th><th>いまの予定</th><th>最終更新(だれ)</th><th></th></tr></thead><tbody>
+  ${items.map(i => `<tr class="${i.pri ? 'prirow' : ''} ${i.holdReason ? 'holdrow' : ''}"><td class="mono nw">${esc(i.tag)}</td><td><b class="mono nw">${esc(i.part)}</b> ${priH(i)} ${holdH(i)}</td><td>${nameH(i)}</td><td class="mono nw">${esc(i.lot)}</td><td class="num">${esc(i.qty)}</td>
+    <td>${stH(i.status)}</td><td>${carrierH(i)}</td><td>${locH(i)}</td><td class="small"><b>${esc(i.next)}</b>${i.status === '未受入' || i.status === '未検査' ? `<div class="mute">受入の計画: ${planH(planOf(i))}</div>` : ''}${offPlan(i).length ? '<div style="color:var(--pri);font-weight:700">✗ 受入の計画と違う</div>' : ''}</td><td class="small">${byH(i)}</td>
     <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button></td></tr>`).join('') || '<tr><td colspan="11" class="empty">まだありません</td></tr>'}
+  </tbody></table></div>`;
+  return head + `<div class="card flush"><table class="tbl items"><thead><tr><th>タグ</th><th>品番</th><th>品名</th><th>数量</th><th>出庫予定日</th><th>ステータス</th><th>パレット</th><th>置き場所</th><th>いまの予定</th><th>最終更新(だれ)</th><th></th></tr></thead><tbody>
+  ${items.map(i => `<tr class="${i.pri ? 'prirow' : ''} ${i.holdReason ? 'holdrow' : ''} ${i.status === 'まとめ済' ? 'donerow' : ''}"><td class="mono nw">${esc(i.tag)}${i.reissue ? `<div class="small mute">${i.reissue === '分割' ? '分けた残り' : 'まとめ'}: ${esc(i.origin)}</div>` : ''}</td><td><b class="mono nw">${esc(i.part)}</b> ${priH(i)} ${holdH(i)}</td><td>${nameH(i)}</td><td class="num">${esc(i.qty)}</td><td class="small nw">${i.due ? (i.due === today() ? '今日' : esc(i.due)) : '<span class="mute">-</span>'}</td>
+    <td>${stH(i.status)}${i.mergedTo ? `<div class="small mute">→ ${esc(i.mergedTo)}</div>` : ''}</td><td>${carrierH(i)}</td><td>${locH(i)}</td><td class="small"><b>${esc(i.next)}</b></td><td class="small">${byH(i)}</td>
+    <td><button class="btn" onclick="showItem('${esc(i.tag)}')">履歴</button></td></tr>`).join('') || '<tr><td colspan="11" class="empty">まだありません</td></tr>'}
+  </tbody></table></div>`;
+};
+
+/* ---------------- 計画との照合(計画どおりかを一覧で) ----------------
+   受入の計画(台車・置き場所) / 保留 / 優先 / いまの場所(ステータスで行ける場所) / 出庫予定日 を、部品ごとに ✓ ✗ で */
+function checkItem(i) {
+  const C = [], add = (k, ok, txt) => C.push({ k, ok, txt });
+  const p = planOf(i), first = i.hist.find(e => e.type === 'place'), lt = (MAST.locs[i.loc] || {}).type || '';
+  const ngs = EVENTS.filter(e => e.type === 'ng' && e.tag === i.tag).length;
+  const planHold = !!(i.planHold || i.tagHold);
+  if (i.sec !== 2) {
+    if (!first) add('受入', null, '未受入');
+    else if (planHold) add('受入', !first.cart, first.cart ? `保留なのに ${CK(first.cart)} ${first.cart} に載せた` : `保留棚 ${first.loc} へ`);
+    else if (first.data.offPlan) add('受入', false, `計画外として登録: ${first.cart} @ ${first.loc}(${first.data.offPlan})`);
+    else if (p && (p.carts.length || p.locs.length)) { const ng = planNG(MAST, i.part, first.cart, first.loc, (MAST.locs[first.loc] || {}).type); add('受入', !ng.length, `${first.cart || '-'} @ ${first.loc}${ng.length ? `(計画: ${p.carts.join('・') || '指定なし'} @ ${p.locs.join('・') || '指定なし'})` : ''}`); }
+    else add('受入', true, `${first.cart || '-'} @ ${first.loc}(計画の指定なし)`);
+    if (planHold) add('保留', i.status === '未受入' ? null : i.status === '保留' && lt === '保留場所', i.status === '未受入' ? `届いたら保留棚へ(${i.holdReason})` : i.status === '保留' && lt === '保留場所' ? `保留棚 ${i.loc}(${i.holdReason})` : `保留のはずが ${i.status}(${whereOf(i) || '-'})`);
+    else if (i.status === '保留') add('保留', false, `計画にない保留(${i.holdReason || '理由なし'})`);
+  } else {
+    if (i.due) add('出庫予定日', i.status === '入庫待ち(包装済)' ? true : i.due < today() ? false : null, i.status === '入庫待ち(包装済)' ? `${i.due === today() ? '今日' : i.due} の予定どおり完了` : i.due < today() ? `${i.due} の予定を過ぎている` : `${i.due === today() ? '今日' : i.due} の予定 ・ いま ${i.status}`);
+    if (i.reissue === '分割') add('出庫', true, `${i.origin} から分けた残り → 未入庫(計画側へ戻す)`);
+    if (i.reissue) add('新しいタグ', i.attached ? true : false, i.attached ? '貼付済' : 'まだ貼付確認されていない');
+  }
+  if (i.pri) add('優先', placed(i) ? !!priOK(i) : null, placed(i) ? (priOK(i) ? `優先の${i.cart ? CK(i.cart) : '置き場所'}にある` : `優先の${i.cart ? CK(i.cart) : '置き場所'}ではない(${whereOf(i)})`) : 'まだ置かれていない');
+  const okTypes = MOVE_OK[i.status];
+  if (placed(i) && okTypes && lt) add('場所', okTypes.includes(lt), okTypes.includes(lt) ? `${lt}(${i.status} で置いてよい場所)` : `${lt} は ${i.status} の場所ではない(${okTypes.join('・')})`);
+  if (ngs) add('計画外の検知', null, `${ngs}回(現場で止めたので登録はされていない)`);
+  const done = i.status === (i.sec === 2 ? '入庫待ち(包装済)' : '入庫待ち(検査済)') || (planHold && i.status === '保留') || i.status === '未入庫';
+  const verdict = C.some(c => c.ok === false) ? 'ng' : ['未受入', '出庫予定'].includes(i.status) ? 'wait' : done ? 'ok' : 'run';
+  return { C, verdict };
+}
+const VERD = { ng: ['✗ 要確認', '#c41a1a'], ok: ['✓ 計画どおり(完了)', '#15803d'], run: ['進行中(ここまで計画どおり)', '#1d5fc4'], wait: ['未着手', '#6b7480'] };
+VIEWS.check = () => {
+  const [sec, only] = (ARG || '1').split('.'); const s2 = sec === '2' ? '2' : '1';
+  const its = secItems(s2).filter(i => i.status !== 'まとめ済').map(i => ({ i, ...checkItem(i) }));
+  const n = k => its.filter(x => x.verdict === k).length;
+  const list = its.filter(x => !only || x.verdict === only).sort((a, b) => ['ng', 'run', 'wait', 'ok'].indexOf(a.verdict) - ['ng', 'run', 'wait', 'ok'].indexOf(b.verdict) || (b.i.pri - a.i.pri));
+  const cnt = { 1: secItems('1').filter(i => i.status !== 'まとめ済').length, 2: secItems('2').filter(i => i.status !== 'まとめ済').length };
+  return `<div class="head"><div><h1>計画との照合</h1><div class="mute small">計画(受入の台車・置き場所、保留、優先、出庫予定日)と、現場の記録(部品一覧)を部品ごとに見比べます。✗ があるものは「要確認」です。</div></div></div>
+  ${secTabs('check', s2, cnt)}
+  <div class="vk">${['ng', 'run', 'wait', 'ok'].map(k => `<a href="#check-${s2}${only === k ? '' : '.' + k}" class="vkc ${only === k ? 'on' : ''}" style="border-left-color:${VERD[k][1]}"><div>${VERD[k][0]}</div><b style="color:${VERD[k][1]}">${n(k)}</b></a>`).join('')}</div>
+  ${only ? `<div class="small" style="margin:6px 0">「${VERD[only][0]}」だけを表示中 ・ <a href="#check-${s2}">すべて表示</a></div>` : ''}
+  <div class="card flush"><table class="tbl chk"><thead><tr><th>判定</th><th>タグ</th><th>品番</th><th>いまの状態</th><th>いまの場所</th><th>照合の内容</th></tr></thead><tbody>
+  ${list.map(({ i, C, verdict }) => `<tr class="v-${verdict}"><td class="nw"><b style="color:${VERD[verdict][1]}">${VERD[verdict][0]}</b></td><td class="mono nw">${esc(i.tag)}</td><td><b class="mono nw">${esc(i.part)}</b> ${priH(i)} ${holdH(i)}<div class="small mute">${esc(i.name)}</div></td><td>${stH(i.status)}</td><td class="small">${placed(i) ? esc(whereOf(i)) : '<span class="mute">-</span>'}</td>
+    <td>${C.map(c => `<div class="ck-r ${c.ok === true ? 'y' : c.ok === false ? 'n' : 'u'}"><span class="ck-i">${c.ok === true ? '✓' : c.ok === false ? '✗' : '・'}</span><b>${esc(c.k)}</b> ${esc(c.txt)}</div>`).join('') || '<span class="mute small">照合する計画なし</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ありません</td></tr>'}
   </tbody></table></div>`;
 };
 // タグの 優先・保留・備考 を直す(タグ表に直した行を足す。同じタグは下の行が使われる)
@@ -571,10 +630,29 @@ VIEWS.devices = () => {
       <tr><th>Google</th><td>結果をスプレッドシートにためる。共有された人しか読み書きできない</td></tr>
       <tr><th>この管理画面</th><td>2.5秒ごとに新しい結果だけを読み、置き場マップを更新。優先アラートを現場へ送る</td></tr>
       <tr><th>通信が切れたら</th><td>スマホが結果をためておき、つながったら自動で送る</td></tr></tbody></table></section></div>
-  <section class="card flush" style="margin-top:16px"><table class="tbl"><thead><tr><th>端末</th><th>状態</th><th>アカウント</th><th>最終連絡</th><th>送った件数</th><th>送信待ち</th></tr></thead><tbody>
-  ${devs.map(d => `<tr><td><b>${esc(d.name)}</b></td><td>${Date.now() - d.lastT < 120000 ? '<span class="ok">● 接続中</span>' : '<span class="mute">○ 未接続</span>'}</td><td class="small">${esc(d.account)}</td><td class="small">${esc(d.last)}</td><td class="num">${d.n}</td><td class="num">${d.info && d.info.pending ? d.info.pending : 0}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">まだありません</td></tr>'}
-  </tbody></table></section>`;
+  <section class="card flush" style="margin-top:16px"><table class="tbl"><thead><tr><th>端末</th><th>状態</th><th>担当(社員証)</th><th>アカウント</th><th>最終連絡</th><th>送った件数</th><th>送信待ち</th></tr></thead><tbody>
+  ${devs.map(d => `<tr><td><b>${esc(d.name)}</b></td><td>${Date.now() - d.lastT < 120000 ? '<span class="ok">● 接続中</span>' : '<span class="mute">○ 未接続</span>'}</td><td>${d.worker ? `<b>${esc(d.worker)}</b> <span class="mono small mute">${esc(d.wid)}</span>` : '<span class="mute">-</span>'}</td><td class="small">${esc(d.account)}</td><td class="small">${esc(d.last)}</td><td class="num">${d.n}</td><td class="num">${d.info && d.info.pending ? d.info.pending : 0}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">まだありません</td></tr>'}
+  </tbody></table></section>
+  ${staffCard()}`;
 };
+// 社員証(レジのように、スマホを使う前に自分の社員証を読む)
+function staffCard() {
+  const staff = Object.values(MAST.staff || {}), devs = Object.values(ST.devices);
+  return `<section class="card sect" style="margin-top:16px"><div class="ch"><h2>社員証</h2><button class="btn primary" onclick="printStaff()">社員証を印刷</button></div>
+    <div class="mute small" style="margin-bottom:8px">スマホを使う前に、レジのように自分の社員証を読みます。そのあとの記録には、だれが作業したかが残ります(部品一覧の「最終更新」、通信モニター)。「交代」で次の人に替わります。</div>
+    <div class="row" style="margin-bottom:10px"><input type="text" id="w_id" placeholder="社員番号 例: E004" style="width:140px"><input type="text" id="w_name" placeholder="氏名" style="width:160px"><input type="text" id="w_role" placeholder="担当 例: 受入" style="width:140px"><button class="btn primary" onclick="addStaff()">追加</button></div>
+    <table class="tbl"><thead><tr><th>社員番号</th><th>氏名</th><th>担当</th><th>いま使っている端末</th><th>記録の件数</th></tr></thead><tbody>
+    ${staff.map(w => { const on = devs.filter(d => d.wid === w.id && Date.now() - d.lastT < 12 * 3600e3); const n = EVENTS.filter(e => (e.data || {}).wid === w.id && e.type !== 'worker').length;
+      return `<tr><td class="mono"><b>${esc(w.id)}</b></td><td>${esc(w.name)}</td><td>${esc(w.role)}</td><td>${on.map(d => esc(d.name)).join('・') || '<span class="mute">-</span>'}</td><td class="num">${n}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">まだありません(設定 →「デモ用データをそろえる」)</td></tr>'}
+    </tbody></table></section>`;
+}
+async function addStaff() {
+  const id = $('w_id').value.trim().toUpperCase(), name = $('w_name').value.trim(); if (!id || !name) return toast('社員番号と氏名を入れてください', true);
+  try { await ensureTabs(); await appendRows('staff', [[id, name, $('w_role').value.trim()]]); MAST = await readMasters(); rebuild(); toast('追加しました'); render(); } catch (e) { toast(e.message, true); }
+}
+function printStaff() {
+  printSheet(Object.values(MAST.staff || {}).map(w => `<div class="ptag staff"><div data-qr="${esc(workerQR(w))}" class="pq"></div><div class="pt"><div class="pk">社員証</div><div class="pn">${esc(w.name)}</div><div class="pm mono">${esc(w.id)}</div><div class="pl">${esc(w.role)}</div></div></div>`));
+}
 
 /* ---------------- 設定 ---------------- */
 VIEWS.setup = () => `<div class="head"><h1>設定</h1></div>
@@ -607,6 +685,7 @@ async function seedDemo(quiet) {
     ['SP-T', '補用仮置き', '補用検査 仮置き', ''], ['SP-D', '補用検査机', '補用検査員の机', ''], ['PK-T', '包装仮置き', '包装 仮置き', ''], ['PK-W', '包装作業場', '包装作業場', ''], ['S-01', '出荷前', '出荷前置き場', '']];
   const C = [['C-01', '通常台車1', '', '台車'], ['C-02', '通常台車2', '', '台車'], ['CP-01', '優先台車1', '○', '台車'],
     ['PP-01', '優先パレット1', '○', 'パレット'], ['PP-02', '優先パレット2', '○', 'パレット'], ['P-01', 'パレット1', '', 'パレット'], ['P-02', 'パレット2', '', 'パレット'], ['P-03', 'パレット3', '', 'パレット'], ['P-04', 'パレット4', '', 'パレット']];
+  const W = [['E001', '田中 一郎', '受入'], ['E002', '鈴木 花子', '検査'], ['E003', '高橋 誠', '出庫・包装']];
   // ② 出庫→出荷 のデモ用「今日の出庫予定」(① とは別。計画から来るリスト)
   const S = shipRows();
   let max = Math.max(0, ...Object.keys(MAST.tags).map(k => +((k.match(/^T(\d+)$/) || [])[1] || 0)));
@@ -624,6 +703,7 @@ async function seedDemo(quiet) {
     const nc = C.filter(c => !have.has(c[0])); if (nc.length) await appendRows('carts', nc);
     if (!Object.keys(MAST.plans || {}).length) await appendRows('plans', DEMO_PLAN);
     const ns = S.filter(r => !(MAST.ship || {})[r[0]]); if (ns.length) await appendRows('ship', ns);
+    const nw = W.filter(r => !(MAST.staff || {})[r[0]]); if (nw.length) await appendRows('staff', nw);
 
     MAST = await readMasters(); rebuild(); if (quiet) return;
     toast(`デモ用データをそろえました(追加: 部品${nt.length}・置き場所${nl.length}・台車/パレット${nc.length}・出庫予定${ns.length}・計画の保留/備考${upd.length})`); location.hash = '#tags'; render();
