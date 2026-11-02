@@ -237,3 +237,10 @@ body.field.xl .pair,body.field.xl .msg,body.field.xl .act,body.field.xl .hist,bo
 .wkbar.off{background:#7f1d1d;animation:wkp 1.6s ease-in-out infinite}.wkbar.off .wk-k{background:#fff;color:#7f1d1d}
 @keyframes wkp{50%{background:#991b1b}}
 .cand.k-worker{border-left-color:#7c3aed}
+.cd-now{font-size:13px;color:#475569;background:#eef1f5;border-radius:6px;padding:2px 8px;justify-self:start}
+.mergefab{position:fixed;left:0;right:0;bottom:0;z-index:40;padding:10px max(12px,env(safe-area-inset-left,0px)) calc(10px + env(safe-area-inset-bottom,0px));background:rgba(8,14,26,.94);border-top:2px solid #3a4d73}
+.mfab-go{width:100%;border:0;border-radius:14px;background:#16a34a;color:#fff;font-size:22px;font-weight:900;padding:14px 12px;display:grid;gap:4px;box-shadow:0 0 0 3px #86efac;animation:mfab 1.4s ease-in-out infinite;font-family:inherit}
+.mfab-s{font-size:13px;font-weight:700;color:#dcfce7}
+@keyframes mfab{50%{box-shadow:0 0 0 7px rgba(134,239,172,.45)}}
+.mfab-wait{display:grid;gap:2px;color:#e2e8f0;font-size:13px;background:#1e2b45;border:2px dashed #4b5d82;border-radius:14px;padding:10px 14px}.mfab-wait b{font-size:17px;color:#fff}
+body.hasfab{padding-bottom:110px}

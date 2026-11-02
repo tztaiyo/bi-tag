@@ -159,6 +159,7 @@ function renderShell() {
   <div class="act" id="act" hidden></div>
   <div class="msg" id="msg"></div>
   <section class="hist"><div class="hist-h"><b>この端末の操作</b><span id="sendinfo"></span></div><div id="recent"></div></section>
+  <div class="mergefab" id="mergefab" hidden></div>
   <div class="sheet-back" id="sheet" hidden></div>
   <div class="manual"><input type="text" id="manual" placeholder="手入力(タグの文字)"><button class="btn" onclick="manualIn()">読む</button><button class="btn" onclick="photoScan()">写真で読む</button></div>`;
   $('manual').addEventListener('keydown', e => { if (e.key === 'Enter') manualIn(); });
@@ -696,11 +697,19 @@ function mergeAdd(P) {
   if (!issueCheck(P)) return;
   if (F.merge.find(x => x.tag === P.tag)) { beep('dup'); return msg(`${esc(P.tag)} はもう入っています`, 'dup'); }
   F.merge.push({ ...P, qty: qtyOf(P), name: partName(P) }); F.part = { ...P, done: true, ctx: ctx() };
-  beep('ok'); flash('ok'); renderPair(); renderMerge(); hint(); say(`${F.merge.length}点目`);
-  msg(`<b class="mono">${esc(P.part)}</b>(${esc(P.tag)})を加えました。続けて読むか、「まとめて出庫」を押してください`, 'ok');
+  beep('ok'); flash('ok'); renderPair(); renderMerge(); hint();
+  say(F.merge.length >= 2 ? `${F.merge.length}点目。読み終わったら、画面の下の、まとめて出庫する、を押してください` : `${F.merge.length}点目`);
+  msg(`<b class="mono">${esc(P.part)}</b>(${esc(P.tag)})を加えました(${F.merge.length}点)。${F.merge.length >= 2 ? '読み終わったら、<b>画面の下の緑のボタン「まとめて出庫する」</b>を押してください' : 'まとめる部品をもう1点以上読んでください'}`, 'ok');
 }
 function renderMerge() {
-  const el = $('mergebox'); if (!el) return;
+  const el = $('mergebox'), fab = $('mergefab'); if (!el) return;
+  // 画面の下にいつも出る「まとめて出庫」バー(見落とさないように)
+  if (fab) {
+    fab.hidden = !F.merge; document.body.classList.toggle('hasfab', !!F.merge);
+    if (F.merge) { const n = F.merge.length;
+      fab.innerHTML = n >= 2 ? `<button class="mfab-go" onclick="doMerge()"><span class="mfab-s">まとめる部品 ${n}点 ・ 読み終わったら押す</span>まとめて出庫する(新しいタグ1枚)</button>`
+        : `<div class="mfab-wait"><b>まとめる: ${n}点</b><span>あと${2 - n}点以上タグを読むと、ここに「まとめて出庫する」ボタンが出ます</span></div>`; }
+  }
   if (!F.merge) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = `<div class="mg-h">まとめる部品 <b>${F.merge.length}点</b></div>${F.merge.map(x => `<div class="mg-r"><span class="mono"><b>${esc(x.part)}</b></span><span>${esc(x.tag)} ・ ${x.qty}</span></div>`).join('') || '<div class="mute small" style="color:#9fb0cc">まだありません。タグを読んでください</div>'}
@@ -1137,6 +1146,16 @@ function detected(text) {
   CAND = { text, t, at: nowT }; beep('tick'); closeSheet(); renderCand();   // 次のタグに向けたら、お知らせ画面は閉じる
   clearTimeout(CAND_T); CAND_T = setTimeout(() => { if (CAND && CAND.text === text) { QUIET[text] = Date.now() + 3000; CAND = null; renderCand(); } }, 4000);
 }
+// この工程で、このタグはもう済んでいるか(済んでいるときだけ「二重読み取り」と出す)
+function doneHere(tag) {
+  const st = statusOf(tag), r2 = RANK_2[st], where = PLACED[tag] ? whereNow(PLACED[tag]) : '';
+  if (F.mode === '置く') return PLACED[tag] ? `二重読み取り(登録済み: ${where})` : '';
+  if (F.mode === '検査') return ['検査済', '入庫待ち(検査済)'].includes(st) ? `二重読み取り(検査済み)` : '';
+  if (F.mode === '出庫') return r2 >= 2 || st === 'まとめ済' ? `二重読み取り(出庫済み)` : '';
+  if (F.mode === '補用') return r2 >= 5 ? `二重読み取り(補用検査済み)` : '';
+  if (F.mode === '包装') return r2 >= 8 ? `二重読み取り(包装済み)` : '';
+  return '';
+}
 function renderCand() {
   const el = $('candwrap'); if (!el) return;
   if (!CAND) { el.innerHTML = ''; return; }
@@ -1145,11 +1164,12 @@ function renderCand() {
   const v = t.kind === 'worker' ? t.name : t.kind === 'part' ? t.part : t.code;
   const sub = t.kind === 'worker' ? `社員番号 ${t.id}` : t.kind === 'part' ? `${tagInfo(t.tag).name || ''} ・ ${t.tag}` : t.kind === 'cart' ? ((MAST.carts[t.code] || {}).name || carrierKind(MAST, t.code)) : `${t.type} ${(MAST.locs[t.code] || {}).name || ''}`;
   const pri = t.kind === 'part' ? isPriPart(t) : t.pz;
-  const reg = t.kind === 'part' && PLACED[t.tag];
+  const done = t.kind === 'part' ? doneHere(t.tag) : '';
+  const stNow = t.kind === 'part' && !done && (PLACED[t.tag] || STAT[t.tag]) ? `${statusOf(t.tag)}${PLACED[t.tag] ? ' ・ ' + whereNow(PLACED[t.tag]) : ''}` : '';
   const hr = t.kind === 'part' ? holdReasonOf(t) : '';
   el.innerHTML = `<button class="cand k-${t.kind} ${pri ? 'pri' : ''} ${hr ? 'held' : ''}" onclick="confirmCand()">
-    ${hr ? `<span class="cd-hold">保留: ${esc(hr)}</span>` : ''}<span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}${reg ? ` <span class="cd-reg">二重読み取り(登録済み: ${esc(whereNow(reg))})</span>` : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
-    <span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
+    ${hr ? `<span class="cd-hold">保留: ${esc(hr)}</span>` : ''}<span class="cd-k">${lab}${pri ? ' <b>優先</b>' : ''}${done ? ` <span class="cd-reg">${esc(done)}</span>` : ''}</span><span class="cd-v mono">${esc(v)}</span><span class="cd-s">${esc(sub)}</span>
+    ${stNow ? `<span class="cd-now">いま: ${esc(stNow)}</span>` : ''}<span class="cd-tap">タップで確定</span><i class="bar"></i></button>`;
 }
 function confirmCand() {
   const c = CAND; if (!c) return;
