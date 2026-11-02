@@ -2560,14 +2560,34 @@ async function askText(msg, value = '') {
   return r.i === 1 ? r.v : null;
 }
 let AUDIO = null;
-function beep(kind = 'ok') {   // ok: 短い高音 / pri: 2回 / ng: 低音
+function beep(kind = 'ok') {   // 驚かせない、やわらかいチャイムの音(立ち上がり・消え方をなめらかに)
+  // [音の高さ(Hz), 鳴らし始め(秒), 長さ(秒)]。0.1 秒くらいずつ、ずらして重ねる
+  const S = {
+    tick: [[1175, 0, .08]],                                   // 候補が出た: ごく小さく「ぽ」
+    ok: [[880, 0, .25]],                                      // 読んだ: 「ぽん」
+    link: [[659, 0, .3], [988, .1, .4]],                      // 登録できた: 「ぽろん」(上がる)
+    dup: [[784, 0, .3], [659, .14, .4]],                      // 登録済み: 「ぽろん」(下がる)
+    pri: [[784, 0, .45], [988, .16, .45], [1175, .32, .6]],   // 優先・お知らせ: 駅のチャイムのような3音
+    ng: [[523, 0, .4], [440, .18, .55]],                      // 止まる: 低めの2音(ブザーにしない)
+  }[kind] || [[523, 0, .4], [440, .18, .55]];
+  const vol = kind === 'tick' ? .035 : kind === 'ok' ? .07 : .09;
   try {
     AUDIO = AUDIO || new AudioContext();
-    const tones = kind === 'ok' ? [[1046, .07]] : kind === 'link' ? [[880, .06], [1318, .09]] : kind === 'pri' ? [[1568, .1], [0, .05], [1568, .1], [0, .05], [1568, .14]] : kind === 'dup' ? [[660, .08], [0, .04], [440, .12]] : kind === 'tick' ? [[1760, .03]] : [[220, .3]];
-    let t = AUDIO.currentTime;
-    for (const [f, d] of tones) { if (f) { const o = AUDIO.createOscillator(), g = AUDIO.createGain(); o.frequency.value = f; g.gain.value = .18; o.connect(g); g.connect(AUDIO.destination); o.start(t); o.stop(t + d); } t += d; }
+    if (AUDIO.state === 'suspended') AUDIO.resume();
+    const t0 = AUDIO.currentTime + .01;
+    for (const [f, at, d] of S) {
+      for (const [mul, g0] of [[1, 1], [2, .18]]) {   // 少しだけ倍音を足して、鐘のようにやわらかく
+        const o = AUDIO.createOscillator(), g = AUDIO.createGain();
+        o.type = 'sine'; o.frequency.value = f * mul;
+        const s0 = t0 + at;
+        g.gain.setValueAtTime(0.0001, s0);
+        g.gain.exponentialRampToValueAtTime(vol * g0, s0 + .015);       // ふわっと立ち上がる
+        g.gain.exponentialRampToValueAtTime(0.0001, s0 + d);             // すっと消える
+        o.connect(g); g.connect(AUDIO.destination); o.start(s0); o.stop(s0 + d + .02);
+      }
+    }
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [120, 60, 120, 60, 200] : kind === 'ng' ? 300 : kind === 'dup' ? [60, 50, 60] : kind === 'tick' ? 15 : 40); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate(kind === 'pri' ? [80, 70, 80] : kind === 'ng' ? [70, 60, 70] : kind === 'dup' ? [40, 50, 40] : kind === 'tick' ? 10 : 30); } catch (e) { }
 }
 
 /* ---------------- 設定(スプレッドシートとログイン用ID) ----------------
